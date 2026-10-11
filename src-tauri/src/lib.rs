@@ -131,6 +131,7 @@ async fn p2p_send(
     state: tauri::State<'_, P2pSession>,
     file_path: String,
     registry: String,
+    code: String,
 ) -> Result<(), String> {
     let path = file_path.trim().to_string();
     if path.is_empty() {
@@ -141,16 +142,13 @@ async fn p2p_send(
     }
     let registry = normalize_registry(&registry)?;
     save_p2p_registry(app.clone(), registry.clone())?;
-    spawn_p2p(
-        &app,
-        state.inner(),
-        vec![
-            "send".into(),
-            path,
-            "--registry".into(),
-            registry,
-        ],
-    )
+    let mut args = vec!["send".into(), path, "--registry".into(), registry];
+    // UI 生成口令并已向用户展示,须经 --code 原样下发(CLI 自动口令只在传完才打印)
+    if !code.trim().is_empty() {
+        args.push("--code".into());
+        args.push(code.trim().to_uppercase());
+    }
+    spawn_p2p(&app, state.inner(), args)
 }
 
 #[tauri::command]
