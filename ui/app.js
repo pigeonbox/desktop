@@ -2,6 +2,9 @@
     const $ = id => document.getElementById(id);
 
     window.addEventListener('DOMContentLoaded', async () => {
+      // 传输模式/自定义中继:恢复持久化
+      if ($('p2p-mode')) $('p2p-mode').value = localStorage.getItem('p2p-mode') || 'auto';
+      if ($('p2p-relay')) $('p2p-relay').value = localStorage.getItem('p2p-relay') || '';
       // 设备直传面板初始化(独立于服务器连接)
       try {
         $('p2p-registry').value = await invoke('get_p2p_registry');
@@ -65,7 +68,18 @@
       const code = genCode();
       $('p2p-mycode').textContent = code;
       $('p2p-mycode').style.display = 'block';
-      start('send', { filePath: path, code });
+      start('send', { filePath: path, code, ...txOpts() });
+    }
+    function txOpts() {
+      return {
+        mode: $('p2p-mode') ? $('p2p-mode').value : 'auto',
+        relay: $('p2p-relay') ? $('p2p-relay').value.trim() : '',
+      };
+    }
+    function toggleAdv() {
+      const adv = $('p2p-adv');
+      const open = adv.style.display !== 'none';
+      adv.style.display = open ? 'none' : 'block';
     }
     function genCode() {
       const cs = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -78,7 +92,7 @@
       resetP2p();
       const code = $('p2p-code').value.trim();
       if (!code) { $('p2p-err').textContent = '请输入口令'; return; }
-      start('recv', { code });
+      start('recv', { code, ...txOpts() });
     }
     async function start(cmd, extra) {
       const registry = $('p2p-registry').value.trim();
@@ -103,6 +117,15 @@
       if (p.kind === 'stdout') {
         log.textContent += p.line + '\n';
         log.scrollTop = log.scrollHeight;
+        // 传输路径徽章(via=quic-direct/relay)
+        const vm = p.line.match(/via=([a-z0-9()+-]+)/);
+        if (vm) {
+          const chip = $('p2p-path');
+          const direct = vm[1].indexOf('quic-direct') === 0;
+          chip.textContent = direct ? '当前路径：直连 ' + vm[1] : '当前路径：中继兜底';
+          chip.className = 'path-chip ' + (direct ? 'direct' : 'relay');
+          chip.style.display = 'block';
+        }
         // send 会打印口令 XXXX-XXXX-XXXX,提取后大字展示
         const m = p.line.match(/\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b/);
         if (m && !transferDone && !$('p2p-mycode').textContent) {
@@ -131,6 +154,7 @@
       $('p2p-mycode').classList.remove('ok');
       $('p2p-log').textContent = '';
       $('p2p-log').style.display = 'none';
+      $('p2p-path').style.display = 'none';
     }
     function setBusy(busy, label) {
       for (const id of ['pick', 'recv', 'p2p-code', 'p2p-registry']) $(id).disabled = busy;

@@ -132,6 +132,8 @@ async fn p2p_send(
     file_path: String,
     registry: String,
     code: String,
+    mode: String,
+    relay: String,
 ) -> Result<(), String> {
     let path = file_path.trim().to_string();
     if path.is_empty() {
@@ -148,7 +150,24 @@ async fn p2p_send(
         args.push("--code".into());
         args.push(code.trim().to_uppercase());
     }
+    args.extend(mode_args(&mode, &relay));
     spawn_p2p(&app, state.inner(), args)
+}
+
+/// 传输模式映射:relay=仅中继(--no-punch)/direct=仅直连(--no-relay)/auto=先通后优;
+/// relay 非空时显式指定中继地址(覆盖自动发现)。
+fn mode_args(mode: &str, relay: &str) -> Vec<String> {
+    let mut v = Vec::new();
+    match mode {
+        "relay" => v.push("--no-punch".to_string()),
+        "direct" => v.push("--no-relay".to_string()),
+        _ => {}
+    }
+    if !relay.trim().is_empty() {
+        v.push("--relay".to_string());
+        v.push(relay.trim().to_string());
+    }
+    v
 }
 
 #[tauri::command]
@@ -157,6 +176,8 @@ async fn p2p_recv(
     state: tauri::State<'_, P2pSession>,
     code: String,
     registry: String,
+    mode: String,
+    relay: String,
 ) -> Result<(), String> {
     let code = code.trim().to_string();
     if code.is_empty() {
@@ -169,18 +190,16 @@ async fn p2p_recv(
         .download_dir()
         .map_err(|e| format!("下载目录解析失败: {e}"))?;
     let _ = std::fs::create_dir_all(&dir);
-    spawn_p2p(
-        &app,
-        state.inner(),
-        vec![
-            "recv".into(),
-            code,
-            "--registry".into(),
-            registry,
-            "--out".into(),
-            dir.to_string_lossy().to_string(),
-        ],
-    )
+    let mut args = vec![
+        "recv".into(),
+        code,
+        "--registry".into(),
+        registry,
+        "--out".into(),
+        dir.to_string_lossy().to_string(),
+    ];
+    args.extend(mode_args(&mode, &relay));
+    spawn_p2p(&app, state.inner(), args)
 }
 
 /// 终止当前直传进程。返回是否确有进程被终止。
