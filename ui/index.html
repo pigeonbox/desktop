@@ -4,89 +4,244 @@
   <meta charset="UTF-8" />
   <title>PigeonBox</title>
   <style>
-    :root { color-scheme: light dark; }
-    * { box-sizing: border-box; margin: 0; }
-    body {
-      min-height: 100vh; display: flex; align-items: center; justify-content: center;
-      font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-      background: linear-gradient(160deg, #eef1ff, #f7f8fa);
+    /* 设计 token 对齐 frontend-core(清新柔和风):品牌靛蓝点睛 + 中性灰阶 */
+    :root {
+      color-scheme: light dark;
+      --primary: #5e6ad2;
+      --primary-hover: #7b85da;
+      --primary-active: #424a93;
+      --primary-bg: #eff0fb;
+      --primary-ring: rgba(94, 106, 210, 0.16);
+
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --tint: #f7f8fa;
+      --border-soft: #e7e8ec;
+      --border: #d6d8de;
+
+      --text-1: #0a0a0a;
+      --text-2: #404040;
+      --text-3: #737373;
+      --text-4: #a3a3a3;
+
+      --danger: #dc2626;
+      --success: #15803d;
+      --success-bg: #f0fdf4;
+
+      --radius-md: 10px;
+      --radius-lg: 14px;
+      --radius-xl: 20px;
+
+      --shadow-card: 0 24px 56px -20px rgba(16, 18, 24, 0.16), 0 4px 12px -4px rgba(16, 18, 24, 0.06);
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
     }
     @media (prefers-color-scheme: dark) {
-      body { background: linear-gradient(160deg, #16181d, #0f1013); }
-      .card { background: #1d2026 !important; }
-      h1 { color: #e8eaf0 !important; }
-      .hint, .tip { color: #8a8f9c !important; }
-      .log { background: #14161a !important; }
-      input { background: #14161a; border-color: #33363f !important; color: #e8eaf0; }
-      .code { color: #8f94ff !important; }
+      :root {
+        --primary: #8e97e0;
+        --primary-hover: #767eb9;
+        --primary-active: #b0b6e9;
+        --primary-bg: rgba(142, 151, 224, 0.14);
+        --primary-ring: rgba(142, 151, 224, 0.22);
+
+        --bg: #0a0a0a;
+        --surface: #141414;
+        --tint: #17181c;
+        --border-soft: #262629;
+        --border: #33363f;
+
+        --text-1: #fafafa;
+        --text-2: #d4d4d4;
+        --text-3: #a3a3a3;
+        --text-4: #737373;
+
+        --success: #4ade80;
+        --success-bg: rgba(74, 222, 128, 0.12);
+
+        --shadow-card: 0 24px 56px -20px rgba(0, 0, 0, 0.65), 0 4px 12px -4px rgba(0, 0, 0, 0.45);
+      }
     }
-    .card {
-      width: 480px; padding: 36px 36px 30px; border-radius: 16px; background: #fff;
-      box-shadow: 0 12px 40px rgba(30, 40, 90, 0.12); text-align: center;
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      display: flex; min-height: 100vh; padding: 28px 24px;
+      font-family: var(--font); color: var(--text-1);
+      -webkit-font-smoothing: antialiased;
+      background: linear-gradient(155deg, #eff0fb 0%, var(--bg) 45%, #eceef4 100%);
     }
-    .logo { width: 64px; height: 64px; border-radius: 14px; margin: 0 auto 14px; background: #5b5fe8;
-            display: flex; align-items: center; justify-content: center; }
-    .logo span { color: #fff; font-size: 30px; font-weight: 700; }
-    h1 { font-size: 20px; color: #222; margin-bottom: 4px; }
-    .hint { color: #888; font-size: 13px; margin-bottom: 18px; }
+    @media (prefers-color-scheme: dark) {
+      body { background: radial-gradient(1100px 480px at 50% -8%, rgba(142, 151, 224, 0.12), transparent 70%), var(--bg); }
+      .btn-primary { color: #14141a; }
+    }
+
+    .shell {
+      margin: auto; width: 100%; max-width: 920px;
+      background: var(--surface); border: 1px solid var(--border-soft);
+      border-radius: var(--radius-xl); box-shadow: var(--shadow-card);
+    }
+
+    /* ── 头部 ── */
+    .head { display: flex; align-items: center; gap: 14px; padding: 22px 28px; border-bottom: 1px solid var(--border-soft); }
+    .head img {
+      width: 46px; height: 46px; border-radius: 11px; display: block;
+      box-shadow: 0 6px 16px rgba(94, 106, 210, 0.28);
+    }
+    .head h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.2px; }
+    .head p { font-size: 12.5px; color: var(--text-3); margin-top: 3px; }
+
+    /* ── 双面板:左=服务器连接(主),右=设备直传(次) ── */
+    .body { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; padding: 22px 22px 22px; }
+    .tile {
+      display: flex; flex-direction: column;
+      background: var(--tint); border: 1px solid var(--border-soft);
+      border-radius: var(--radius-lg); padding: 20px;
+    }
+    .tile-head { display: flex; align-items: center; gap: 8px; }
+    .tile-icon { width: 17px; height: 17px; color: var(--primary); }
+    .tile-title { font-size: 15px; font-weight: 600; }
+    .tile-sub { font-size: 12px; line-height: 1.7; color: var(--text-3); margin: 7px 0 16px; }
+    .spacer { flex: 1; min-height: 16px; }
+    .tip { font-size: 12px; line-height: 1.7; color: var(--text-3); }
+    .pane-form { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-bottom: 14px; }
+
+    .pill {
+      font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+      color: var(--primary); background: var(--primary-bg);
+      padding: 2px 9px; border-radius: 999px;
+    }
+
+    .field-label {
+      display: block; font-size: 12.5px; font-weight: 500;
+      color: var(--text-3); letter-spacing: 0.2px; margin-bottom: 7px;
+    }
+    .field { margin-bottom: 14px; }
+
     input {
-      width: 100%; padding: 10px 13px; border: 1px solid #d8dbe4; border-radius: 8px;
-      font-size: 14px; outline: none; margin-bottom: 12px;
+      width: 100%; height: 42px; padding: 0 13px;
+      font-family: var(--font); font-size: 14px; color: var(--text-1);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-md); outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
     }
-    input:focus { border-color: #5b5fe8; }
+    input::placeholder { color: var(--text-4); }
+    input:hover:not(:disabled) { border-color: var(--text-4); }
+    input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-ring); }
+    input:disabled { background: var(--tint); color: var(--text-4); cursor: not-allowed; }
+
     button {
-      width: 100%; padding: 11px; border: 0; border-radius: 8px; background: #5b5fe8;
-      color: #fff; font-size: 14px; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      height: 42px; padding: 0 18px; white-space: nowrap;
+      font-family: var(--font); font-size: 14px; font-weight: 500;
+      border: 1px solid transparent; border-radius: var(--radius-md);
+      cursor: pointer; user-select: none;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
     }
-    button:disabled { opacity: 0.6; cursor: default; }
-    button.ghost { background: transparent; border: 1px solid #c9cdda; color: inherit; }
-    .err { color: #d33; font-size: 13px; min-height: 18px; margin-top: 8px; }
-    .tip { margin-top: 14px; font-size: 12px; color: #aab; line-height: 1.6; }
-    .divider { margin: 22px 0 16px; border: 0; border-top: 1px dashed #d8dbe4; }
-    .sec-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: inherit; }
-    .row { display: flex; gap: 10px; }
-    .row > * { flex: 1; }
+    button:disabled { opacity: 0.55; cursor: default; }
+    .btn-primary { background: var(--primary); color: #fff; padding: 0 24px; }
+    .btn-primary:hover:not(:disabled) { background: var(--primary-hover); }
+    .btn-primary:active:not(:disabled) { background: var(--primary-active); }
+    .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--text-2); }
+    .btn-ghost:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
+    .btn-quiet { background: transparent; border-color: var(--border-soft); color: var(--text-3); }
+    .btn-quiet:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
+    .btn-block { width: 100%; }
+
+    .input-row { display: flex; gap: 10px; }
+    .input-row input { flex: 1; min-width: 0; }
+    .input-row button { flex: 0 0 auto; }
+
+    .err { font-size: 12.5px; line-height: 1.5; color: var(--danger); margin-top: 8px; }
+    .err:empty { display: none; }
+
     .code {
-      display: none; font-size: 22px; letter-spacing: 4px; font-weight: 700;
-      color: #4448d8; margin: 8px 0 2px; user-select: all;
+      display: none; padding: 11px 14px; text-align: center;
+      font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2.5px;
+      color: var(--primary); background: var(--primary-bg);
+      border-radius: var(--radius-md); user-select: all;
     }
+    .code.ok { color: var(--success); background: var(--success-bg); }
     .log {
-      display: none; text-align: left; margin-top: 10px; padding: 10px 12px;
-      background: #f4f5f9; border-radius: 8px; font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
-      max-height: 150px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-      color: #555;
+      display: none; margin-top: 10px; padding: 10px 12px;
+      background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md);
+      font: 11px/1.55 var(--mono); color: var(--text-2);
+      max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
     }
-    .ok { color: #1a9c5c !important; }
+    #p2p-cancel { margin-top: 12px; }
+
+    @media (max-width: 820px) {
+      .body { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="logo"><span>柜</span></div>
-    <h1>PigeonBox 桌面版</h1>
-    <p class="hint">连接你的文件快递柜服务器</p>
-    <input id="url" placeholder="服务器地址，如 http://10.44.129.215" />
-    <button id="go" onclick="connect()">连 接</button>
-    <div class="err" id="err"></div>
-    <p class="tip">连接后本窗口即服务器完整界面；<br/>托盘菜单可随时返回本设置页或退出。</p>
+  <main class="shell">
+    <header class="head">
+      <img src="favicon.svg" alt="PigeonBox" width="46" height="46" />
+      <div>
+        <h1>PigeonBox 桌面版</h1>
+        <p>连接你的文件快递柜服务器</p>
+      </div>
+    </header>
+    <div class="body">
+      <section class="tile">
+        <div class="tile-head">
+          <svg class="tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3.5" y="4.5" width="17" height="6" rx="2" />
+            <rect x="3.5" y="13.5" width="17" height="6" rx="2" />
+            <path d="M7 7.5h.01M7 16.5h.01" />
+          </svg>
+          <span class="tile-title">连接服务器</span>
+        </div>
+        <p class="tile-sub">连接后本窗口即服务器完整界面；已保存的服务器会自动重连。</p>
 
-    <hr class="divider" />
-    <div class="sec-title">设备直传（P2P，经中继/打洞，服务端只见密文）</div>
+        <div class="pane-form">
+          <label class="field-label" for="url">服务器地址</label>
+          <div class="input-row">
+            <input id="url" placeholder="如 http://10.44.129.215" spellcheck="false" autocapitalize="off" autocomplete="off" />
+            <button class="btn-primary" id="go" onclick="connect()">连接</button>
+          </div>
+          <div class="err" id="err"></div>
+        </div>
 
-    <input id="p2p-registry" placeholder="直传注册中心地址，如 http://p2p.example.com:12346" />
+        <p class="tip">托盘菜单可随时返回本设置页或退出。</p>
+      </section>
 
-    <div class="row" style="margin-bottom: 10px;">
-      <button class="ghost" id="pick" onclick="pickAndSend()">选择文件发送…</button>
-      <button class="ghost" id="recv" onclick="recv()">按口令接收</button>
+      <section class="tile">
+        <div class="tile-head">
+          <svg class="tile-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M7 4v13M4 14l3 3 3-3" />
+            <path d="M17 20V7M14 10l3-3 3 3" />
+          </svg>
+          <span class="tile-title">设备直传</span>
+          <span class="pill">P2P</span>
+        </div>
+        <p class="tile-sub">经中继/打洞端到端直传，文件不落服务器、服务端只见密文。</p>
+
+        <label class="field-label" for="p2p-registry">直传注册中心</label>
+        <div class="field">
+          <input id="p2p-registry" placeholder="如 http://p2p.example.com:12346" spellcheck="false" autocapitalize="off" autocomplete="off" />
+        </div>
+
+        <div class="field-label">发送文件</div>
+        <div class="field">
+          <button class="btn-ghost btn-block" id="pick" onclick="pickAndSend()">选择文件发送…</button>
+        </div>
+
+        <label class="field-label" for="p2p-code">接收文件</label>
+        <div class="field input-row">
+          <input id="p2p-code" placeholder="对方口令，如 XXXX-XXXX-XXXX" spellcheck="false" autocapitalize="off" autocomplete="off" />
+          <button class="btn-ghost" id="recv" onclick="recv()">按口令接收</button>
+        </div>
+
+        <div class="code" id="p2p-mycode"></div>
+        <pre class="log" id="p2p-log"></pre>
+        <button class="btn-quiet btn-block" id="p2p-cancel" style="display:none" onclick="cancel()">取消传输</button>
+        <div class="err" id="p2p-err"></div>
+
+        <div class="spacer"></div>
+        <p class="tip" id="p2p-note">接收的文件存入系统下载目录；直传需要可达的 p2pd 注册中心。</p>
+      </section>
     </div>
-    <input id="p2p-code" placeholder="输入对方口令接收（存到系统下载目录）" />
-    <div class="code" id="p2p-mycode"></div>
-    <pre class="log" id="p2p-log"></pre>
-    <div class="row" style="margin-top: 10px;">
-      <button id="p2p-cancel" style="display:none" onclick="cancel()">取消传输</button>
-    </div>
-    <div class="err" id="p2p-err"></div>
-    <p class="tip" id="p2p-note">需要可达的 p2pd 注册中心；文件不落服务器。</p>
-  </div>
+  </main>
 
   <script>
     const { invoke } = window.__TAURI__.core;
@@ -113,6 +268,7 @@
       }
       $('url').focus();
       $('url').addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
+      $('p2p-code').addEventListener('keydown', e => { if (e.key === 'Enter') recv(); });
     });
 
     async function connect() {
@@ -125,7 +281,11 @@
       const eff = target || url;
       if (eff.startsWith('http://')) {
         const host = eff.replace(/^http:\/\//, '').split(/[\/ :]/)[0];
-        const local = /^(localhost|127\.0\.0\.1|\[::1\]|192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.) /.test(host + ' ');
+        // 内网/回环免确认:主机名精确匹配,或私网段前缀
+        // (2026-10-11 修复:原模式尾部误留一个字面空格,导致 10./192.168. 等
+        // 内网地址永远判不中,每个 http:// 地址都弹明文确认框)
+        const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host) ||
+          /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
         if (!local && !confirm('将以明文 HTTP 连接（内容与凭据不加密传输）。\n' + eff + '\n\n继续连接吗？')) {
           return;
         }
