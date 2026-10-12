@@ -156,6 +156,7 @@
     .adv { display: none; }
     .path-chip { display: none; margin: 4px 0 6px; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; text-align: center; border: 1px solid var(--border-soft); color: var(--text-3); }
     .path-chip.direct { color: var(--primary); border-color: var(--primary); }
+    .path-chip.fail { color: var(--danger, #f87171); border-color: var(--danger, #f87171); }
     .input-row { display: flex; gap: 10px; }
     .input-row input { flex: 1; min-width: 0; }
     .input-row button { flex: 0 0 auto; }
@@ -208,7 +209,7 @@
           <label class="field-label" for="url">服务器地址</label>
           <div class="input-row">
             <input id="url" placeholder="如 http://10.44.129.215" spellcheck="false" autocapitalize="off" autocomplete="off" />
-            <button class="btn-primary" id="go" onclick="connect()">连接</button>
+            <button class="btn-primary" id="go">连接</button>
           </div>
           <div class="err" id="err"></div>
         </div>
@@ -234,35 +235,35 @@
 
         <label class="field-label" for="p2p-mode">传输模式</label>
         <div class="field">
-          <select id="p2p-mode" onchange="localStorage.setItem('p2p-mode', this.value)">
+          <select id="p2p-mode">
             <option value="auto">自动（先通后优，推荐）</option>
             <option value="relay">仅中继（最稳，跳过打洞）</option>
             <option value="direct">仅直连（最快，失败不兜底）</option>
           </select>
         </div>
-        <button class="link-btn" type="button" onclick="toggleAdv()">高级 ▾</button>
+        <button class="link-btn" type="button">高级 ▾</button>
         <div id="p2p-adv" class="adv">
           <label class="field-label" for="p2p-relay">自定义中继地址（留空＝自动发现）</label>
           <div class="field">
-            <input id="p2p-relay" placeholder="如 host:56787" spellcheck="false" autocapitalize="off" autocomplete="off" onchange="localStorage.setItem('p2p-relay', this.value)" />
+            <input id="p2p-relay" placeholder="如 host:56787" spellcheck="false" autocapitalize="off" autocomplete="off" />
           </div>
         </div>
 
         <div class="field-label">发送文件</div>
         <div class="field">
-          <button class="btn-ghost btn-block" id="pick" onclick="pickAndSend()">选择文件发送…</button>
+          <button class="btn-ghost btn-block" id="pick">选择文件发送…</button>
         </div>
 
         <label class="field-label" for="p2p-code">接收文件</label>
         <div class="field input-row">
           <input id="p2p-code" placeholder="对方口令，如 XXXX-XXXX-XXXX" spellcheck="false" autocapitalize="off" autocomplete="off" />
-          <button class="btn-ghost" id="recv" onclick="recv()">按口令接收</button>
+          <button class="btn-ghost" id="recv">按口令接收</button>
         </div>
 
         <div class="path-chip" id="p2p-path"></div>
         <div class="code" id="p2p-mycode"></div>
         <pre class="log" id="p2p-log"></pre>
-        <button class="btn-quiet btn-block" id="p2p-cancel" onclick="cancel()">取消传输</button>
+        <button class="btn-quiet btn-block" id="p2p-cancel">取消传输</button>
         <div class="err" id="p2p-err"></div>
 
         <div class="spacer"></div>

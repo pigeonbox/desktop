@@ -1,6 +1,21 @@
     const { invoke } = window.__TAURI__.core;
     const $ = id => document.getElementById(id);
 
+    // 事件必须走 addEventListener:CSP(default-src 'self')连内联 onclick/onchange
+    // 一并拦截(内联处理器=内联脚本),曾致所有点击静默失效而键盘监听正常。
+    (function bindEvents() {
+      const bind = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+      bind('go', 'click', connect);
+      bind('pick', 'click', pickAndSend);
+      bind('recv', 'click', recv);
+      bind('p2p-cancel', 'click', cancel);
+      bind('p2p-adv-toggle', 'click', toggleAdv);
+      bind('p2p-mode', 'change', e => localStorage.setItem('p2p-mode', e.target.value));
+      bind('p2p-relay', 'change', e => localStorage.setItem('p2p-relay', e.target.value));
+      bind('url', 'keydown', e => { if (e.key === 'Enter') connect(); });
+      bind('p2p-code', 'keydown', e => { if (e.key === 'Enter') recv(); });
+    })();
+
     window.addEventListener('DOMContentLoaded', async () => {
       // 传输模式/自定义中继:恢复持久化
       if ($('p2p-mode')) $('p2p-mode').value = localStorage.getItem('p2p-mode') || 'auto';
@@ -24,8 +39,6 @@
         $('go').disabled = false;
       }
       $('url').focus();
-      $('url').addEventListener('keydown', e => { if (e.key === 'Enter') connect(); });
-      $('p2p-code').addEventListener('keydown', e => { if (e.key === 'Enter') recv(); });
     });
 
     async function connect() {
@@ -59,6 +72,7 @@
 
     // ── 设备直传 ──
     let transferDone = true;
+    let lastErr = '';
 
     async function pickAndSend() {
       resetP2p();
@@ -135,6 +149,11 @@
       } else if (p.kind === 'stderr' || p.kind === 'error') {
         log.textContent += p.line + '\n';
         log.scrollTop = log.scrollHeight;
+        // 失败即上屏:错误行实时进错误框,不让失败静默
+        if (/失败|不可用|超时|timeout|EOF|refused|错误|不存在|仅直连|打洞|拒绝|invalid|not found|limit/i.test(p.line)) {
+          lastErr = p.line;
+          $('p2p-err').textContent = '\u2716 \u4f20\u8f93\u5f02\u5e38\uff1a' + p.line.trim();
+        }
       } else if (p.kind === 'exit') {
         transferDone = true;
         setBusy(false);
@@ -143,7 +162,12 @@
           if (!$('p2p-mycode').textContent) $('p2p-mycode').textContent = '✓ 传输完成';
           if ($('p2p-mycode').textContent.startsWith('✓') === false) $('p2p-mycode').textContent += ' ✓';
         } else {
-          $('p2p-err').textContent = '传输异常退出（code ' + p.code + '），详见日志';
+          // 失败明示:优先展示具体原因行,其次退出码(不让失败停在日志里)
+          const why = lastErr ? lastErr.trim() : ('异常退出 code ' + p.code + '，详见下方日志');
+          $('p2p-err').textContent = '\u2716 \u4f20\u8f93\u5931\u8d25\uff1a' + why;
+          $('p2p-path').textContent = '\u4f20\u8f93\u5931\u8d25';
+          $('p2p-path').className = 'path-chip fail';
+          $('p2p-path').style.display = 'block';
         }
       }
     }
@@ -154,6 +178,7 @@
       $('p2p-mycode').classList.remove('ok');
       $('p2p-log').textContent = '';
       $('p2p-log').style.display = 'none';
+      lastErr = '';
       $('p2p-path').style.display = 'none';
     }
     function setBusy(busy, label) {
