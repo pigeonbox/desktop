@@ -132,7 +132,7 @@ jobs:
     steps:
       - name: 回挂产物到生态主仓
         env:
-          GH_TOKEN: ${{ secrets.DESKTOP_PAT }}
+          GH_TOKEN: ${{ secrets.PB_BOT_TOKEN || secrets.DESKTOP_PAT }}
           TAG: ${{ env.REL_TAG }}
         run: |
           sleep 30
@@ -159,3 +159,15 @@ jobs:
           # 组件回挂恒不为 Latest(Latest 属于 hub 生态快照 v*);release 已存在时也兜底纠偏
           gh release edit "$TAG" --repo pigeonbox/pigeonbox --latest=false || true
           echo "已回挂到 pigeonbox/pigeonbox Releases"
+
+      - name: 回调 hub 列车编排器(唤醒 advance 核对完成度;回调丢失由 hub 15 分钟 sweep 兜底,不阻断发布)
+        env:
+          CB_TOKEN: ${{ secrets.PB_BOT_TOKEN || secrets.DESKTOP_PAT }}
+          TAG: ${{ inputs.version || github.ref_name }}
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $CB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/pigeonbox/pigeonbox/dispatches \
+            -d "{\"event_type\":\"train-advance\",\"client_payload\":{\"component\":\"desktop\",\"tag\":\"$TAG\"}}" \
+            || echo "::warning::hub 回调失败(train-orchestrator sweep 兜底)"
