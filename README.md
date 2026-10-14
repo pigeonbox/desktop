@@ -35,9 +35,9 @@ Linux 版依赖**系统提供的 webkit2gtk-4.1（libsoup3）**，要求 **glibc
 设置页「设备直传」面板：选文件发送 → 出 `XXXX-XXXX-XXXX` 口令；对端输口令 → 直连取走，文件落系统下载目录。
 
 - 传输走 PAKE 口令认证 + UDP 打洞直连（失败自动回落加密中继），**服务端只见密文，文件不落服务器**——只需一个可达的 [p2pd 注册中心](https://github.com/pigeonbox/p2p)（联邦部署见 chart `p2p.enabled` 或 `docker run`）
-- p2pc 以 Tauri sidecar 内嵌（CI 按 target triple 从 [p2p Releases](https://github.com/pigeonbox/p2p/releases) 拉取 `p2pc-<triple>`）；自 2026-10-08 起纳入发布列车钉版（`DEPS.env` `P2PC_REF`，由 trainctl 统一管理），当前钉 `v0.6.2`
+- p2pc 以 Tauri sidecar 内嵌（CI 按 target triple 从 [p2p Releases](https://github.com/pigeonbox/p2p/releases) 拉取 `p2pc-<triple>`）；自 2026-10-08 起纳入发布列车钉版（`DEPS.env` `P2PC_REF`，由 trainctl 统一管理），当前钉 `v0.6.3`
 - **传输协议 v2（desktop v1.3.1 起，p2pc 0.4+）与旧版互不兼容**：双端须升级到同版本，旧版互传首帧直接失败
-- 当前钉版：desktop **v1.21.0** / p2pc **v0.6.2**（发布列车同号）；**wire 协议 v4 为破坏性变更**（p2pc v0.6 起），双端（desktop/p2pc）必须同版互传
+- 当前钉版：desktop **v1.22.0** / p2pc **v0.6.3**（发布列车同号）；**wire 协议 v4 为破坏性变更**（p2pc v0.6 起），双端（desktop/p2pc）必须同版互传；p2pc v0.6.3 起 `--json` 输出 NDJSON 事件流（脚本化集成）
 
 ## Roadmap
 
