@@ -55,7 +55,7 @@ jobs:
           V2=$(grep -m1 '^version = ' src-tauri/Cargo.toml | sed 's/[^0-9.]*//g')
           [ "$V1" = "${VER#desktop-v}" ] && [ "$V2" = "${VER#desktop-v}" ] \
             || { echo "::error::版本双写不一致 tag=$VER tauri=$V1 cargo=$V2——发版走 hub 列车 bump"; exit 1; }
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with: { node-version: "20" }
       - name: Rust setup
         uses: dtolnay/rust-toolchain@stable
