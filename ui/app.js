@@ -12,9 +12,30 @@
       bind('p2p-adv-toggle', 'click', toggleAdv);
       bind('p2p-mode', 'change', e => localStorage.setItem('p2p-mode', e.target.value));
       bind('p2p-relay', 'change', e => localStorage.setItem('p2p-relay', e.target.value));
+      bind('p2p-copy', 'click', copyMyCode);
       bind('url', 'keydown', e => { if (e.key === 'Enter') connect(); });
       bind('p2p-code', 'keydown', e => { if (e.key === 'Enter') recv(); });
     })();
+
+    // 口令复制（clipboard API 优先，webview 不可用时回退选区复制）
+    async function copyMyCode() {
+      const code = $('p2p-mycode').textContent.trim();
+      if (!code) return;
+      try {
+        await navigator.clipboard.writeText(code);
+      } catch {
+        const range = document.createRange();
+        range.selectNode($('p2p-mycode'));
+        const sel = getSelection();
+        sel.removeAllRanges(); sel.addRange(range);
+        document.execCommand('copy');
+        sel.removeAllRanges();
+      }
+      $('p2p-copy').textContent = '✓ 已复制';
+      setTimeout(() => { $('p2p-copy').textContent = '复制口令'; }, 1500);
+    }
+    // 口令块显隐统一走 wrap（含复制按钮与对端指引）
+    function showMyCode(on) { $('p2p-mycode-wrap').hidden = !on; }
 
     window.addEventListener('DOMContentLoaded', async () => {
       // 传输模式/自定义中继:恢复持久化
@@ -81,7 +102,7 @@
       // 口令由本端生成并立即展示(经 --code 下发给 p2pc)——CLI 自动口令只在传完才打印
       const code = genCode();
       $('p2p-mycode').textContent = code;
-      $('p2p-mycode').style.display = 'block';
+      showMyCode(true);
       start('send', { filePath: path, code, ...txOpts() });
     }
     function txOpts() {
@@ -92,7 +113,7 @@
     }
     function toggleAdv() {
       const adv = $('p2p-adv');
-      const open = adv.style.display !== 'none';
+      const open = adv.style.display === 'block';
       adv.style.display = open ? 'none' : 'block';
     }
     function genCode() {
@@ -144,7 +165,7 @@
         const m = p.line.match(/\b([A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4})\b/);
         if (m && !transferDone && !$('p2p-mycode').textContent) {
           $('p2p-mycode').textContent = m[1];
-          $('p2p-mycode').style.display = 'block';
+          showMyCode(true);
         }
       } else if (p.kind === 'stderr' || p.kind === 'error') {
         log.textContent += p.line + '\n';
@@ -174,7 +195,7 @@
     function resetP2p() {
       $('p2p-err').textContent = '';
       $('p2p-mycode').textContent = '';
-      $('p2p-mycode').style.display = 'none';
+      showMyCode(false);
       $('p2p-mycode').classList.remove('ok');
       $('p2p-log').textContent = '';
       $('p2p-log').style.display = 'none';
