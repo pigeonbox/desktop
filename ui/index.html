@@ -244,7 +244,7 @@
           <span class="pill">P2P</span>
         </div>
         <p class="tile-sub">
-          <b>发送</b>：选文件 → 自动生成口令 → 把口令发给对方；<b>接收</b>：贴入对方给你的口令。数据端到端加密，不经服务器。
+          <b>发送</b>：选文件 → 4 位配对码或 12 位口令 → 对方输码/口令即连；<b>接收</b>：贴入对方给你的配对码或口令。数据端到端加密，不经服务器。
         </p>
 
         <label class="field-label" for="p2p-registry">直传注册中心<span class="hint-inline">（设备互相找到对方的通讯录；留空＝内置默认，一般不用改）</span></label>
@@ -268,25 +268,32 @@
           </div>
         </div>
 
-        <div class="field-label">发送文件<span class="hint-inline">（选好后自动生成口令，发给对方即可）</span></div>
+        <div class="field-label">发送文件<span class="hint-inline" id="p2p-send-hint">（选好后自动生成口令，发给对方即可）</span></div>
         <div class="field">
           <button class="btn-ghost btn-block" id="pick">选择文件发送…</button>
         </div>
+        <button class="link-btn" type="button" id="p2p-pair-toggle">改用 4 位配对码（对方输码即连，免抄口令）</button>
 
-        <label class="field-label" for="p2p-code">接收文件<span class="hint-inline">（口令来自对方的「发送」）</span></label>
+        <label class="field-label" for="p2p-code">接收文件<span class="hint-inline">（口令/配对码来自对方）</span></label>
         <div class="field input-row">
-          <input id="p2p-code" placeholder="对方口令，如 XXXX-XXXX-XXXX" spellcheck="false" autocapitalize="off" autocomplete="off" />
+          <input id="p2p-code" placeholder="口令 XXXX-XXXX-XXXX 或 4 位配对码" spellcheck="false" autocapitalize="off" autocomplete="off" />
           <button class="btn-ghost" id="recv">按口令接收</button>
         </div>
 
         <div id="p2p-mycode-wrap" class="mycode-wrap" hidden>
-          <div class="field-label">把口令发给对方（10 分钟内有效，一次性）</div>
+          <div class="field-label" id="p2p-mycode-label">把口令发给对方（10 分钟内有效，一次性）</div>
           <div class="input-row">
             <code class="code" id="p2p-mycode"></code>
             <button class="btn-ghost" id="p2p-copy">复制口令</button>
           </div>
-          <p class="tip">对方在 PigeonBox 桌面版「设备直传 → 接收」贴入口令，或在对方电脑执行 <code>p2pc recv 口令</code></p>
+          <p class="tip" id="p2p-mycode-tip">对方在 PigeonBox 桌面版「设备直传 → 接收」贴入口令，或在对方电脑执行 <code>p2pc recv 口令</code></p>
         </div>
+        <div id="p2p-pair-card" hidden style="margin-top:10px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:10px;text-align:center">
+          <p class="tip" style="margin:0 0 8px">设备 <b id="p2p-pair-from"></b> 请求连接，是否接受？</p>
+          <button class="btn-ghost" id="p2p-accept">接受</button>
+          <button class="btn-ghost" id="p2p-deny">拒绝</button>
+        </div>
+        <p class="tip" id="p2p-hint" style="display:none"></p>
         <div class="path-chip" id="p2p-path"></div>
         <pre class="log" id="p2p-log"></pre>
         <button class="btn-quiet btn-block" id="p2p-cancel">取消传输</button>

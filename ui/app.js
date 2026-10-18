@@ -13,6 +13,9 @@
       bind('p2p-mode', 'change', e => localStorage.setItem('p2p-mode', e.target.value));
       bind('p2p-relay', 'change', e => localStorage.setItem('p2p-relay', e.target.value));
       bind('p2p-copy', 'click', copyMyCode);
+      bind('p2p-pair-toggle', 'click', togglePairMode);
+      bind('p2p-accept', 'click', () => decidePair(true));
+      bind('p2p-deny', 'click', () => decidePair(false));
       bind('url', 'keydown', e => { if (e.key === 'Enter') connect(); });
       bind('p2p-code', 'keydown', e => { if (e.key === 'Enter') recv(); });
     })();
@@ -94,16 +97,39 @@
     // ── 设备直传 ──
     let transferDone = true;
     let lastErr = '';
+    // 配对码模式(2026-10-18):发送侧亮 4 位码+接受门;事件经 --json NDJSON
+    // 解析(见 onPairEvent),裁决经 p2p_pair_approve 写子进程 stdin。
+    let pairMode = false;
+    let pairTimer = null;
+
+    function togglePairMode() {
+      if (!transferDone) return;
+      pairMode = !pairMode;
+      $('p2p-pair-toggle').textContent = pairMode
+        ? '改回口令发送（12 位口令，适合异步转交）'
+        : '改用 4 位配对码（对方输码即连，免抄口令）';
+      $('p2p-send-hint').textContent = pairMode
+        ? '（亮 4 位码，对方 5 分钟内输码即连，需你确认）'
+        : '（选好后自动生成口令，发给对方即可）';
+    }
 
     async function pickAndSend() {
       resetP2p();
       const path = await window.__TAURI__.dialog.open({ multiple: false });
       if (!path) return;
+      if (pairMode) {
+        // 配对码由 p2pc 铸出,经 pair_code 事件回传后展示
+        start('send', { filePath: path, code: '', pair: true, ...txOpts() });
+        return;
+      }
       // 口令由本端生成并立即展示(经 --code 下发给 p2pc)——CLI 自动口令只在传完才打印
       const code = genCode();
+      $('p2p-mycode-label').textContent = '把口令发给对方（10 分钟内有效，一次性）';
+      $('p2p-mycode-tip').textContent = '对方在 PigeonBox 桌面版「设备直传 → 接收」贴入口令，或在对方电脑执行 p2pc recv 口令';
+      $('p2p-copy').textContent = '复制口令';
       $('p2p-mycode').textContent = code;
       showMyCode(true);
-      start('send', { filePath: path, code, ...txOpts() });
+      start('send', { filePath: path, code, pair: false, ...txOpts() });
     }
     function txOpts() {
       return {
@@ -152,6 +178,12 @@
       if (p.kind === 'stdout') {
         log.textContent += p.line + '\n';
         log.scrollTop = log.scrollHeight;
+        // --json NDJSON 行(pairing/recv-pairing 模式)→ 结构化配对事件
+        const t = p.line.trim();
+        if (t.startsWith('{') && t.includes('"event"')) {
+          try { onPairEvent(JSON.parse(t)); } catch (_) {}
+          return;
+        }
         // 传输路径徽章(via=quic-direct/relay)
         const vm = p.line.match(/via=([a-z0-9()+-]+)/);
         if (vm) {
@@ -201,6 +233,67 @@
       $('p2p-log').style.display = 'none';
       lastErr = '';
       $('p2p-path').style.display = 'none';
+      $('p2p-pair-card').hidden = true;
+      setHint('');
+      if (pairTimer) { clearInterval(pairTimer); pairTimer = null; }
+    }
+
+    // ── 配对码事件(--json NDJSON) ──
+    let pairDeadline = 0;
+    function onPairEvent(ev) {
+      switch (ev.event) {
+        case 'pair_code': {
+          showMyCode(true);
+          $('p2p-mycode-label').textContent = '配对码（对方输码即连，需你确认）';
+          $('p2p-mycode-tip').textContent = '对方在「接收文件」输入此 4 位码，或执行 p2pc recv ' + ev.code;
+          $('p2p-copy').textContent = '复制配对码';
+          $('p2p-mycode').textContent = ev.code;
+          pairDeadline = ev.ttl_seconds > 0 ? Date.now() + ev.ttl_seconds * 1000 : 0;
+          tickPairCountdown();
+          break;
+        }
+        case 'pair_request': {
+          $('p2p-pair-from').textContent = ev.name || String(ev.from || '').slice(0, 8) || '未知设备';
+          $('p2p-pair-card').hidden = false;
+          break;
+        }
+        case 'pair_denied':
+        case 'pair_expired': {
+          $('p2p-pair-card').hidden = true;
+          setHint(ev.event === 'pair_denied' ? '已拒绝，正在生成新配对码…' : '配对码已过期，正在生成新码…');
+          break;
+        }
+        case 'pair_pending': {
+          setHint('已认领配对码，等待对方确认…');
+          break;
+        }
+      }
+    }
+    function tickPairCountdown() {
+      if (pairTimer) { clearInterval(pairTimer); pairTimer = null; }
+      if (!pairDeadline) return;
+      pairTimer = setInterval(() => {
+        if (transferDone || !$('p2p-mycode').textContent) { clearInterval(pairTimer); pairTimer = null; return; }
+        const left = Math.max(0, Math.round((pairDeadline - Date.now()) / 1000));
+        setHint('配对码 ' + $('p2p-mycode').textContent + ' · 剩余 ' + fmtDurPair(left) + ' · 过期自动换新码');
+      }, 500);
+    }
+    function fmtDurPair(s) {
+      const m = Math.floor(s / 60), r = s % 60;
+      return m + ':' + String(r).padStart(2, '0');
+    }
+    function setHint(text) {
+      const el = $('p2p-hint');
+      if (!el) return;
+      el.textContent = text;
+      el.style.display = text ? 'block' : 'none';
+    }
+    async function decidePair(accept) {
+      $('p2p-pair-card').hidden = true;
+      try { await invoke('p2p_pair_approve', { accept }); } catch (e) {
+        $('p2p-err').textContent = String(e);
+      }
+      if (!accept) setHint('已拒绝，正在生成新配对码…');
     }
     function setBusy(busy, label) {
       for (const id of ['pick', 'recv', 'p2p-code', 'p2p-registry']) $(id).disabled = busy;

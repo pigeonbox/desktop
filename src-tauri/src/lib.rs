@@ -134,6 +134,7 @@ async fn p2p_send(
     code: String,
     mode: String,
     relay: String,
+    pair: bool,
 ) -> Result<(), String> {
     let path = file_path.trim().to_string();
     if path.is_empty() {
@@ -145,8 +146,14 @@ async fn p2p_send(
     let registry = normalize_registry(&registry)?;
     save_p2p_registry(app.clone(), registry.clone())?;
     let mut args = vec!["send".into(), path, "--registry".into(), registry];
-    // UI 生成口令并已向用户展示,须经 --code 原样下发(CLI 自动口令只在传完才打印)
-    if !code.trim().is_empty() {
+    // 配对码模式:4 位码由子进程铸出经 --json 事件回传,裁决走 stdin 单行协议
+    // (--pair-stdin);口令模式:UI 生成口令并已向用户展示,须经 --code 原样下发
+    // (CLI 自动口令只在传完才打印)
+    if pair {
+        args.push("--pair".into());
+        args.push("--json".into());
+        args.push("--pair-stdin".into());
+    } else if !code.trim().is_empty() {
         args.push("--code".into());
         args.push(code.trim().to_uppercase());
     }
@@ -192,14 +199,39 @@ async fn p2p_recv(
     let _ = std::fs::create_dir_all(&dir);
     let mut args = vec![
         "recv".into(),
-        code,
+        code.clone(),
         "--registry".into(),
         registry,
         "--out".into(),
         dir.to_string_lossy().to_string(),
     ];
+    // 4-8 位纯数字=配对码:--json 让 pending 态(pair_state)以结构化事件回传;
+    // 形状识别与 claim/口令回退在 p2pc 侧,这里只透传。
+    if is_pairing_code(&code) {
+        args.push("--json".into());
+    }
     args.extend(mode_args(&mode, &relay));
     spawn_p2p(&app, state.inner(), args)
+}
+
+/// 与 p2pc IsPairingCode 同判据:4-8 位纯数字。
+fn is_pairing_code(s: &str) -> bool {
+    let n = s.chars().count();
+    (4..=8).contains(&n) && s.chars().all(|c| c.is_ascii_digit())
+}
+
+/// 配对接受门裁决转发:向配对子进程 stdin 写单行 y/n(与 --pair-stdin 协议同)。
+#[tauri::command]
+fn p2p_pair_approve(
+    state: tauri::State<'_, P2pSession>,
+    accept: bool,
+) -> Result<(), String> {
+    let mut guard = state.0.lock().map_err(|_| "会话锁异常".to_string())?;
+    let child = guard
+        .as_mut()
+        .ok_or("当前无进行中的直传会话")?;
+    let ans = if accept { "y\n" } else { "n\n" };
+    child.write(ans.as_bytes()).map_err(|e| format!("裁决写入失败: {e}"))
 }
 
 /// 终止当前直传进程。返回是否确有进程被终止。
@@ -293,6 +325,7 @@ pub fn run() {
             p2p_version,
             p2p_send,
             p2p_recv,
+            p2p_pair_approve,
             p2p_cancel
         ])
         .setup(|app| {
