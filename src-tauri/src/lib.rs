@@ -185,9 +185,12 @@ async fn p2p_recv(
     registry: String,
     mode: String,
     relay: String,
+    reverse: bool,
 ) -> Result<(), String> {
     let code = code.trim().to_string();
-    if code.is_empty() {
+    // reverse=反向亮码收件(2026-10-19):本端铸 4 位码等待对方敲码推送,
+    // 接受门经 --pair-stdin 由网页/桌面裁决。
+    if !reverse && code.is_empty() {
         return Err("请输入口令".into());
     }
     let registry = normalize_registry(&registry)?;
@@ -197,17 +200,30 @@ async fn p2p_recv(
         .download_dir()
         .map_err(|e| format!("下载目录解析失败: {e}"))?;
     let _ = std::fs::create_dir_all(&dir);
-    let mut args = vec![
-        "recv".into(),
-        code.clone(),
-        "--registry".into(),
-        registry,
-        "--out".into(),
-        dir.to_string_lossy().to_string(),
-    ];
+    let mut args = if reverse {
+        vec![
+            "recv".into(),
+            "--pair".into(),
+            "--json".into(),
+            "--pair-stdin".into(),
+            "--registry".into(),
+            registry,
+            "--out".into(),
+            dir.to_string_lossy().to_string(),
+        ]
+    } else {
+        vec![
+            "recv".into(),
+            code.clone(),
+            "--registry".into(),
+            registry,
+            "--out".into(),
+            dir.to_string_lossy().to_string(),
+        ]
+    };
     // 4-8 位纯数字=配对码:--json 让 pending 态(pair_state)以结构化事件回传;
     // 形状识别与 claim/口令回退在 p2pc 侧,这里只透传。
-    if is_pairing_code(&code) {
+    if !reverse && is_pairing_code(&code) {
         args.push("--json".into());
     }
     args.extend(mode_args(&mode, &relay));

@@ -8,6 +8,7 @@
       bind('go', 'click', connect);
       bind('pick', 'click', pickAndSend);
       bind('recv', 'click', recv);
+      bind('recv-pair-creator', 'click', recvCreator);
       bind('p2p-cancel', 'click', cancel);
       bind('p2p-adv-toggle', 'click', toggleAdv);
       bind('p2p-mode', 'change', e => localStorage.setItem('p2p-mode', e.target.value));
@@ -153,7 +154,12 @@
       resetP2p();
       const code = $('p2p-code').value.trim();
       if (!code) { $('p2p-err').textContent = '请输入口令'; return; }
-      start('recv', { code, ...txOpts() });
+      start('recv', { code, reverse: false, ...txOpts() });
+    }
+    // 反向亮码收件(2026-10-19):本端铸 4 位码等待对方敲码推送(AirDrop 式「我要收」)
+    async function recvCreator() {
+      resetP2p();
+      start('recv', { code: '', reverse: true, ...txOpts() });
     }
     async function start(cmd, extra) {
       const registry = $('p2p-registry').value.trim();
@@ -265,6 +271,11 @@
         }
         case 'pair_pending': {
           setHint('已认领配对码，等待对方确认…');
+          break;
+        }
+        case 'error': {
+          // --json 失败事件:含配对码被拒/过期语义的完整引导文案
+          $('p2p-err').textContent = '✗ ' + (ev.msg || '传输失败');
           break;
         }
       }

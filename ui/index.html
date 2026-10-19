@@ -277,7 +277,7 @@
         <label class="field-label" for="p2p-code">接收文件<span class="hint-inline">（口令/配对码来自对方）</span></label>
         <div class="field input-row">
           <input id="p2p-code" placeholder="口令 XXXX-XXXX-XXXX 或 4 位配对码" spellcheck="false" autocapitalize="off" autocomplete="off" />
-          <button class="btn-ghost" id="recv">按口令接收</button>
+          <button class="btn-ghost" id="recv">开始接收</button>
         </div>
 
         <div id="p2p-mycode-wrap" class="mycode-wrap" hidden>
@@ -294,6 +294,7 @@
           <button class="btn-ghost" id="p2p-deny">拒绝</button>
         </div>
         <p class="tip" id="p2p-hint" style="display:none"></p>
+        <button class="link-btn" type="button" id="recv-pair-creator">或亮码等对方推（我收文件，对方输码连接）</button>
         <div class="path-chip" id="p2p-path"></div>
         <pre class="log" id="p2p-log"></pre>
         <button class="btn-quiet btn-block" id="p2p-cancel">取消传输</button>
