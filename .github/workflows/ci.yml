@@ -11,24 +11,40 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Linux 依赖(Tauri webkit2gtk-4.1)
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
       # tauri-build 校验 externalBin 存在(sidecar 不入库),CI 与发版同源下载
-      - name: 下载 p2pc sidecar(钉版)
+      # 完整性:同 p2p Release 的 p2pc-checksums.txt 逐资产 sha256 清单——CI 下载的
+      # sidecar 与发版打包的是同一个二进制,校验漏一处=供应链链路上少一道闸。
+      # 版本只认 DEPS.env 的 P2PC_REF:回退 latest 会让 CI 验的东西随时间漂移,
+      # 且可能与本仓 wire 版本不兼容。
+      - name: 下载 p2pc sidecar(钉版+sha256 校验)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          P2PC_REF=$(grep -E '^P2PC_REF=' DEPS.env 2>/dev/null | cut -d= -f2 || true)
-          [ -n "$P2PC_REF" ] || P2PC_REF=$(gh release view -R pigeonbox/p2p --json tagName --jq .tagName)
-          mkdir -p src-tauri/binaries
+          set -euo pipefail
+          TRIPLE=x86_64-unknown-linux-gnu
+          P2PC_REF=$(grep -E '^P2PC_REF=' DEPS.env 2>/dev/null | cut -d= -f2 | tr -d ' \r' || true)
+          if [ -z "$P2PC_REF" ]; then
+            echo "::error::DEPS.env 无 P2PC_REF——拒绝回退 latest(不可复现,且可能与本仓 wire 版本不兼容)。钉版由 hub 列车 bump 写入"
+            exit 1
+          fi
+          tmp=$(mktemp -d)
           gh release download "$P2PC_REF" --repo pigeonbox/p2p \
-            --pattern "p2pc-x86_64-unknown-linux-gnu*" --dir src-tauri/binaries --clobber
-          chmod +x src-tauri/binaries/p2pc-* 2>/dev/null || true
+            --pattern "p2pc-${TRIPLE}*" --dir "$tmp" --clobber
+          gh release download "$P2PC_REF" --repo pigeonbox/p2p \
+            --pattern "p2pc-checksums.txt" --dir "$tmp" --clobber
+          # 只取本 triple 一行(清单含全部平台资产)
+          SUM_LINE=$(grep -E " p2pc-${TRIPLE}(\.exe)?\$" "$tmp/p2pc-checksums.txt" || true)
+          [ -n "$SUM_LINE" ] || { echo "::error::p2pc-checksums.txt 无 p2pc-${TRIPLE} 条目——该 triple 未随 $P2PC_REF 发布"; exit 1; }
+          (cd "$tmp" && echo "$SUM_LINE" | sha256sum -c -)
+          mkdir -p src-tauri/binaries
+          install -m 0755 "$tmp"/p2pc-${TRIPLE}* src-tauri/binaries/
       # 编译门禁：此前仓内无任何 CI 检查，编译回归要到发版打包才暴露
       # Cargo.toml 在 src-tauri/ 子目录，cargo 全程带 manifest-path
       - name: cargo check

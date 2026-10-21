@@ -11,6 +11,15 @@ on:
         required: true
         type: string
 
+concurrency:
+  # 手动 dispatch 重跑与 tag 自动触发可能并发跑同一版本:两边都 gh release upload
+  # --clobber 写同一 Release,先到先写=后写静默覆盖(不报错,只是产物被换掉)。
+  # 按目标版本串行化;cancel-in-progress:false——发布中途取消比排队更糟。
+  # 键取目标版本而非 github.ref:dispatch 的 ref 是分支、tag 触发的 ref 是 tag,
+  # 用 ref 分组等于没分组(两种触发照样并发)。
+  group: ${{ github.workflow }}-${{ inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
 permissions:
   contents: write
 
@@ -40,8 +49,9 @@ jobs:
             args: ""
             triple: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.REL_TAG }}
       - name: 版本一致性断言(tauri.conf.json/Cargo.toml 与 tag 对齐)
@@ -55,39 +65,71 @@ jobs:
           V2=$(grep -m1 '^version = ' src-tauri/Cargo.toml | sed 's/[^0-9.]*//g')
           [ "$V1" = "${VER#desktop-v}" ] && [ "$V2" = "${VER#desktop-v}" ] \
             || { echo "::error::版本双写不一致 tag=$VER tauri=$V1 cargo=$V2——发版走 hub 列车 bump"; exit 1; }
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: "20" }
       - name: Rust setup
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Linux 依赖
         if: startsWith(matrix.platform, 'ubuntu-')
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev
       # 设备直传 sidecar: p2pc 按 Tauri target triple 从 p2p 仓 Release 拉取
-      # (triple 显式列在 matrix;版本钉 DEPS.env 的 P2PC_REF——2026-10-08 起不再取
-      # latest,p2p wire 破坏性变更(v0.4.0 有先例)必须随列车同版推进;tauri-build
-      # 校验 externalBin 存在,缺失即构建失败)
-      - name: 下载 p2pc sidecar(钉版)
+      # (triple 显式列在 matrix;版本钉 DEPS.env 的 P2PC_REF——p2p wire 破坏性变更
+      # (v0.4.0 有先例)必须随列车同版推进;tauri-build 校验 externalBin 存在,
+      # 缺失即构建失败)
+      #
+      # 完整性:随 p2p Release 同发的 p2pc-checksums.txt 是逐资产 sha256 清单
+      # (p2p/.github/workflows/release.yml 生成)。sidecar 是装进用户桌面端的
+      # 可执行文件,必须核到清单值才落盘——其余 p2pc 分发路径(server 镜像/
+      # fnos/qnap/openwrt)均已核,桌面端此前是唯一漏网的一环。
+      - name: 下载 p2pc sidecar(钉版+sha256 校验)
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          P2PC_TRIPLE: ${{ matrix.triple }}
         run: |
-          P2PC_REF=$(grep -E '^P2PC_REF=' DEPS.env 2>/dev/null | cut -d= -f2 || true)
+          set -euo pipefail
+          P2PC_REF=$(grep -E '^P2PC_REF=' DEPS.env 2>/dev/null | cut -d= -f2 | tr -d ' \r' || true)
           if [ -z "$P2PC_REF" ]; then
-            echo "::warning::无 DEPS.env(前列车 tag),sidecar 回退 latest Release(不可复现,下一列车起钉版)"
-            P2PC_REF=$(gh release view -R pigeonbox/p2p --json tagName --jq .tagName)
+            echo "::error::DEPS.env 无 P2PC_REF——拒绝回退 latest(不可复现,且可能与本列车 wire 版本不兼容)。钉版由 hub 列车 bump 写入"
+            exit 1
           fi
           echo "P2PC_REF=$P2PC_REF" >> "$GITHUB_STEP_SUMMARY"
-          mkdir -p src-tauri/binaries
+          tmp=$(mktemp -d)
           gh release download "$P2PC_REF" --repo pigeonbox/p2p \
-            --pattern "p2pc-${{ matrix.triple }}*" --dir src-tauri/binaries --clobber
-          chmod +x src-tauri/binaries/p2pc-* 2>/dev/null || true
+            --pattern "p2pc-${P2PC_TRIPLE}*" --dir "$tmp" --clobber
+          gh release download "$P2PC_REF" --repo pigeonbox/p2p \
+            --pattern "p2pc-checksums.txt" --dir "$tmp" --clobber
+          # 只取本 triple 一行:清单含全部平台资产,别的 triple 缺了不该误伤本矩阵腿
+          # (windows 资产带 .exe 后缀)
+          SUM_LINE=$(grep -E " p2pc-${P2PC_TRIPLE}(\.exe)?\$" "$tmp/p2pc-checksums.txt" || true)
+          [ -n "$SUM_LINE" ] || { echo "::error::p2pc-checksums.txt 无 p2pc-${P2PC_TRIPLE} 条目——该 triple 未随 $P2PC_REF 发布"; exit 1; }
+          # 校验工具按 runner 选:ubuntu/windows(Git Bash)有 sha256sum,macOS 只有 shasum
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd "$tmp" && echo "$SUM_LINE" | sha256sum -c -)
+          else
+            (cd "$tmp" && echo "$SUM_LINE" | shasum -a 256 -c -)
+          fi
+          mkdir -p src-tauri/binaries
+          install -m 0755 "$tmp"/p2pc-${P2PC_TRIPLE}* src-tauri/binaries/
           ls -la src-tauri/binaries/
+      # 构建机 glibc 地板预检(构建前):产物引用的 glibc 符号版本不会高于构建机,
+      # 故构建机 glibc 必须 ≤ 2.35。放在构建前——换错镜像后不必白跑一遍 Rust
+      # 编译才在产物上翻车。非 arm 的 Linux 腿同样适用:有人把 ubuntu-22.04 改成
+      # ubuntu-latest(24.04=glibc 2.39)即在此红。
+      - name: glibc 地板预检(构建机 ≤ 2.35)
+        if: runner.os == 'Linux'
+        run: |
+          GLIBC=$(ldd --version | head -1 | grep -oE '[0-9]+\.[0-9]+$' || true)
+          echo "构建机 glibc: ${GLIBC:-未知}"
+          [ -n "$GLIBC" ] || { echo "::error::读不到构建机 glibc 版本——地板无法判定,请人工确认 runner 镜像"; exit 1; }
+          printf '%s\n2.35\n' "$GLIBC" | sort -VC \
+            || { echo "::error::构建机 glibc $GLIBC > 2.35：Linux 腿必须用 ubuntu-22.04 系列(arm 用 ubuntu-22.04-arm)——24.04 的 2.39 超过 deepin 23/统信 V25 的 2.38"; exit 1; }
       # Linux 预编译 + glibc 地板守卫: 产物引用的 glibc 符号版本 ≈ 构建机 glibc。
       # 钉死 ≤2.35(适配 deepin 23/统信 V25/麒麟 V11 的 2.38 一档),防止未来更换
       # runner 镜像悄悄抬高地板,产物在目标系统上 GLIBC_2.3x not found。
@@ -110,7 +152,7 @@ jobs:
             exit 1
           fi
       - name: 构建并发布（tauri-action：产物进本仓 Release）
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -127,6 +169,7 @@ jobs:
   publish-to-hub:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       REL_TAG: ${{ inputs.version || github.ref_name }}
     steps:
