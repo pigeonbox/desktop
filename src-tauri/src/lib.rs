@@ -12,8 +12,9 @@
 // 对应命令一并退场**：面板只留一句「去 PigeonBeam 做直传」的指引，
 // 死控件（注册中心/传输模式/中继/发送/接收/配对）与其占位命令全部删除
 // ——留着只会让人以为还能用（点下去必失败）。
-// 连带：tauri-plugin-dialog 原本只服务「选择文件发送」，现已无调用方
-// （Cargo.toml 的依赖声明暂留，删它要改 Cargo.lock —— 锁文件归列车管）。
+// 连带：tauri-plugin-dialog 原本只服务「选择文件发送」，现已无调用方；
+// tauri-plugin-shell 随 sidecar 退场一并无调用方 —— 两个依赖与 dialog 的
+// capability 权限一并摘除（Cargo.lock 随之更新，见同提交）。
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
