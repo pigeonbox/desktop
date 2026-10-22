@@ -27,10 +27,7 @@
     "category": "Utility",
     "copyright": "Copyright 2026 PigeonBox",
     "shortDescription": "文件快递柜桌面客户端",
-    "longDescription": "PigeonBox 桌面客户端：托盘常驻，一键连接你的文件快递柜；内置 p2pc 支持设备间 P2P 直传。",
-    "externalBin": [
-      "binaries/p2pc"
-    ],
+    "longDescription": "PigeonBox 桌面客户端：托盘常驻，一键连接你的文件快递柜。设备间直传请使用 PigeonBeam（信鸽直传）。",
     "icon": [
       "icons/32x32.png",
       "icons/icon.ico",

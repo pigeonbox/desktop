@@ -204,11 +204,11 @@
       <img src="favicon.svg" alt="PigeonBox" width="46" height="46" />
       <div>
         <h1>PigeonBox 桌面版</h1>
-        <p>两种用法，互不依赖：连服务器用完整功能，或两台设备点对点直传</p>
+        <p>连上你的文件快递柜服务器，完整功能都在里面</p>
       </div>
     </header>
     <div class="usage-note">
-      💡 不知道从哪开始？只想在两台设备之间传文件 → 用下面的「设备直传」；想把这台电脑当服务器的一个客户端 → 用「连接服务器」。两边互不影响，也不用先连服务器才能直传。
+      💡 设备之间点对点直传请用 <b>PigeonBeam（信鸽直传）</b>——直传已拆为独立应用；本客户端专注「连接服务器」这一件事。
     </div>
     <div class="body">
       <section class="tile">
@@ -241,10 +241,10 @@
             <path d="M17 20V7M14 10l3-3 3 3" />
           </svg>
           <span class="tile-title">设备直传</span>
-          <span class="pill">P2P</span>
+          <span class="pill">PigeonBeam</span>
         </div>
         <p class="tile-sub">
-          <b>发送</b>：选文件 → 4 位配对码或 12 位口令 → 对方输码/口令即连；<b>接收</b>：贴入对方给你的配对码或口令。数据端到端加密，不经服务器。
+          设备直传已独立为 <b>PigeonBeam（信鸽直传）</b>应用——本客户端不再内置直传组件，发送/接收请到 PigeonBeam 完成。
         </p>
 
         <label class="field-label" for="p2p-registry">直传注册中心<span class="hint-inline">（设备互相找到对方的通讯录；留空＝内置默认，一般不用改）</span></label>
@@ -301,7 +301,7 @@
         <div class="err" id="p2p-err"></div>
 
         <div class="spacer"></div>
-        <p class="tip" id="p2p-note">接收的文件存入系统下载目录；直传需要可达的 p2pd 注册中心。</p>
+        <p class="tip" id="p2p-note">设备直传已独立为 PigeonBeam（信鸽直传）应用，请安装 PigeonBeam 后使用；本客户端不再内置直传组件。</p>
       </section>
     </div>
   </main>

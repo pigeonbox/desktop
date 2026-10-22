@@ -48,10 +48,14 @@
       // 设备直传面板初始化(独立于服务器连接)
       try {
         $('p2p-registry').value = await invoke('get_p2p_registry');
-        await invoke('p2p_version'); // 探测 sidecar,失败则提示
+        await invoke('p2p_version'); // 探测直传组件,失败则明示(桌面端不再内置 p2pc)
       } catch (e) {
-        $('p2p-note').textContent = '设备直传不可用：内置 p2pc 缺失（' + String(e).slice(0, 80) + '）';
-        for (const id of ['pick', 'recv', 'p2p-code', 'p2p-registry']) $(id).disabled = true;
+        // Rust 侧返回的提示即「直传请安装 PigeonBeam」(2026-10-22 直传拆分为独立应用)
+        $('p2p-note').textContent = String(e);
+        for (const id of ['pick', 'recv', 'p2p-code', 'p2p-registry', 'p2p-mode', 'p2p-relay', 'p2p-pair-toggle', 'recv-pair-creator']) {
+          const el = $(id);
+          if (el) el.disabled = true;
+        }
       }
       const { listen } = window.__TAURI__.event;
       await listen('p2p-log', ev => onP2pLog(ev.payload));
