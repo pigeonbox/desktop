@@ -8,9 +8,12 @@
 //     等无危险命令（withGlobalTauri 注入的 API 面即以上）；关闭窗口=退出。
 //
 // 设备直传（2026-10-22 起）：直传已拆为独立应用 PigeonBeam（信鸽直传），
-// 桌面端不再随包 p2pc sidecar、也不再编排设备直传——直传相关命令保留同名
-// 占位，未安装 PigeonBeam 时给明确提示（设置页据此显隐直传面板），
-// 不留悬空引用。
+// 桌面端不再随包 p2pc sidecar、也不再编排设备直传。**设置页的直传面板与
+// 对应命令一并退场**：面板只留一句「去 PigeonBeam 做直传」的指引，
+// 死控件（注册中心/传输模式/中继/发送/接收/配对）与其占位命令全部删除
+// ——留着只会让人以为还能用（点下去必失败）。
+// 连带：tauri-plugin-dialog 原本只服务「选择文件发送」，现已无调用方
+// （Cargo.toml 的依赖声明暂留，删它要改 Cargo.lock —— 锁文件归列车管）。
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -79,86 +82,13 @@ fn read_saved_url(app: &tauri::AppHandle) -> String {
         .unwrap_or_default()
 }
 
-// ── 设备直传：已独立为 PigeonBeam（信鸽直传）─────────────────────────
-//
-// 2026-10-22（Wave B'）：设备直传从 PigeonBox 拆为独立应用 PigeonBeam。
-// 桌面端不再随包 p2pc sidecar，也不再 spawn/编排直传子进程——下列命令保留
-// 同名占位，未安装 PigeonBeam 时给明确提示（设置页据此显隐直传面板），
-// 不留悬空引用；注册中心地址仍可读写（交给 PigeonBeam 客户端时复用同一份）。
-
-const BEAM_HINT: &str = "设备直传已独立为 PigeonBeam（信鸽直传）应用，请安装 PigeonBeam 后使用";
-
-#[tauri::command]
-fn get_p2p_registry(app: tauri::AppHandle) -> String {
-    read_app_data_file(&app, "p2p_registry.txt")
-}
-
-#[tauri::command]
-fn save_p2p_registry(app: tauri::AppHandle, registry: String) -> Result<(), String> {
-    let dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("app data dir: {e}"))?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create dir: {e}"))?;
-    std::fs::write(dir.join("p2p_registry.txt"), registry.trim())
-        .map_err(|e| format!("write registry: {e}"))?;
-    Ok(())
-}
-
-/// 探测直传组件可用性：桌面端已无内置 p2pc，恒失败并指向 PigeonBeam。
-#[tauri::command]
-fn p2p_version() -> Result<String, String> {
-    Err(BEAM_HINT.into())
-}
-
-/// 直传发送：已随直传面迁往 PigeonBeam，此处恒失败并给出指引。
-#[tauri::command]
-fn p2p_send() -> Result<(), String> {
-    Err(BEAM_HINT.into())
-}
-
-/// 直传接收：同上，恒失败并给出指引。
-#[tauri::command]
-fn p2p_recv() -> Result<(), String> {
-    Err(BEAM_HINT.into())
-}
-
-/// 配对裁决：配对面已随直传面迁往 PigeonBeam。
-#[tauri::command]
-fn p2p_pair_approve() -> Result<(), String> {
-    Err(BEAM_HINT.into())
-}
-
-/// 终止直传：桌面端不再持有直传进程，无可终止。
-#[tauri::command]
-fn p2p_cancel() -> Result<bool, String> {
-    Err(BEAM_HINT.into())
-}
-
-fn read_app_data_file(app: &tauri::AppHandle, name: &str) -> String {
-    app.path()
-        .app_data_dir()
-        .ok()
-        .and_then(|dir| std::fs::read_to_string(dir.join(name)).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
-}
-
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             connect,
             get_saved,
             save_url,
-            open_settings,
-            get_p2p_registry,
-            save_p2p_registry,
-            p2p_version,
-            p2p_send,
-            p2p_recv,
-            p2p_pair_approve,
-            p2p_cancel
+            open_settings
         ])
         .setup(|app| {
             // 托盘：左键/菜单「显示主窗」，菜单含「服务器设置」「退出」。

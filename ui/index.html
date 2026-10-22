@@ -106,15 +106,6 @@
       background: var(--surface); border: 1px solid var(--border-soft);
       font-size: 13px; line-height: 1.7; color: var(--text-2);
     }
-    .hint-inline { font-weight: 400; font-size: 12px; color: var(--text-3); }
-    .mycode-wrap {
-      margin: 10px 0; padding: 12px 14px; border-radius: var(--radius-md);
-      background: var(--surface); border: 1px dashed var(--primary, #5e6ad2);
-    }
-    .mycode-wrap .code {
-      flex: 1; font-family: var(--mono); font-size: 20px; font-weight: 700;
-      letter-spacing: 2px; color: var(--text-1);
-    }
     .pane-form { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-bottom: 14px; }
 
     .pill {
@@ -127,7 +118,6 @@
       display: block; font-size: 12.5px; font-weight: 500;
       color: var(--text-3); letter-spacing: 0.2px; margin-bottom: 7px;
     }
-    .field { margin-bottom: 14px; }
 
     input {
       width: 100%; height: 42px; padding: 0 13px;
@@ -155,22 +145,8 @@
     .btn-primary:active:not(:disabled) { background: var(--primary-active); }
     .btn-ghost { background: var(--surface); border-color: var(--border); color: var(--text-2); }
     .btn-ghost:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-bg); }
-    #p2p-cancel { display: none; }
-    .btn-quiet { background: transparent; border-color: var(--border-soft); color: var(--text-3); }
-    .btn-quiet:hover:not(:disabled) { border-color: var(--danger); color: var(--danger); }
     .btn-block { width: 100%; }
 
-    select {
-      width: 100%; background: transparent; color: var(--text-1, inherit);
-      border: 1px solid var(--border-soft); border-radius: var(--radius-md);
-      padding: 9px 12px; font-size: 14px; cursor: pointer;
-    }
-    .link-btn { background: none; border: none; color: var(--text-3); font-size: 12.5px; cursor: pointer; padding: 2px 0 6px; }
-    .link-btn:hover { color: var(--primary); }
-    .adv { display: none; }
-    .path-chip { display: none; margin: 4px 0 6px; padding: 5px 12px; border-radius: 999px; font-size: 12.5px; text-align: center; border: 1px solid var(--border-soft); color: var(--text-3); }
-    .path-chip.direct { color: var(--primary); border-color: var(--primary); }
-    .path-chip.fail { color: var(--danger, #f87171); border-color: var(--danger, #f87171); }
     .input-row { display: flex; gap: 10px; }
     .input-row input { flex: 1; min-width: 0; }
     .input-row button { flex: 0 0 auto; }
@@ -178,20 +154,6 @@
     .err { font-size: 12.5px; line-height: 1.5; color: var(--danger); margin-top: 8px; }
     .err:empty { display: none; }
 
-    .code {
-      display: none; padding: 11px 14px; text-align: center;
-      font-family: var(--mono); font-size: 18px; font-weight: 700; letter-spacing: 2.5px;
-      color: var(--primary); background: var(--primary-bg);
-      border-radius: var(--radius-md); user-select: all;
-    }
-    .code.ok { color: var(--success); background: var(--success-bg); }
-    .log {
-      display: none; margin-top: 10px; padding: 10px 12px;
-      background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md);
-      font: 11px/1.55 var(--mono); color: var(--text-2);
-      max-height: 140px; overflow-y: auto; white-space: pre-wrap; word-break: break-all;
-    }
-    #p2p-cancel { margin-top: 12px; }
 
     @media (max-width: 820px) {
       .body { grid-template-columns: 1fr; }
@@ -244,64 +206,12 @@
           <span class="pill">PigeonBeam</span>
         </div>
         <p class="tile-sub">
-          设备直传已独立为 <b>PigeonBeam（信鸽直传）</b>应用——本客户端不再内置直传组件，发送/接收请到 PigeonBeam 完成。
+          设备直传已独立为 <b>PigeonBeam（信鸽直传）</b>应用——本客户端不再内置直传组件。
+          设备之间的点对点发送/接收请到 PigeonBeam 完成（Windows/macOS/Linux 都有）。
         </p>
 
-        <label class="field-label" for="p2p-registry">直传注册中心<span class="hint-inline">（设备互相找到对方的通讯录；留空＝内置默认，一般不用改）</span></label>
-        <div class="field">
-          <input id="p2p-registry" placeholder="如 http://p2p.example.com:12346" spellcheck="false" autocapitalize="off" autocomplete="off" />
-        </div>
-
-        <label class="field-label" for="p2p-mode">传输模式<span class="hint-inline">（一般保持「自动」即可）</span></label>
-        <div class="field">
-          <select id="p2p-mode">
-            <option value="auto">自动（先通后优，推荐）</option>
-            <option value="relay">仅中继（最稳，跳过打洞）</option>
-            <option value="direct">仅直连（最快，失败不兜底）</option>
-          </select>
-        </div>
-        <button class="link-btn" type="button" id="p2p-adv-toggle">高级 ▾</button>
-        <div id="p2p-adv" class="adv">
-          <label class="field-label" for="p2p-relay">自定义中继地址（留空＝自动发现）</label>
-          <div class="field">
-            <input id="p2p-relay" placeholder="如 host:56787" spellcheck="false" autocapitalize="off" autocomplete="off" />
-          </div>
-        </div>
-
-        <div class="field-label">发送文件<span class="hint-inline" id="p2p-send-hint">（选好后自动生成口令，发给对方即可）</span></div>
-        <div class="field">
-          <button class="btn-ghost btn-block" id="pick">选择文件发送…</button>
-        </div>
-        <button class="link-btn" type="button" id="p2p-pair-toggle">改用 4 位配对码（对方输码即连，免抄口令）</button>
-
-        <label class="field-label" for="p2p-code">接收文件<span class="hint-inline">（口令/配对码来自对方）</span></label>
-        <div class="field input-row">
-          <input id="p2p-code" placeholder="口令 XXXX-XXXX-XXXX 或 4 位配对码" spellcheck="false" autocapitalize="off" autocomplete="off" />
-          <button class="btn-ghost" id="recv">开始接收</button>
-        </div>
-
-        <div id="p2p-mycode-wrap" class="mycode-wrap" hidden>
-          <div class="field-label" id="p2p-mycode-label">把口令发给对方（10 分钟内有效，一次性）</div>
-          <div class="input-row">
-            <code class="code" id="p2p-mycode"></code>
-            <button class="btn-ghost" id="p2p-copy">复制口令</button>
-          </div>
-          <p class="tip" id="p2p-mycode-tip">对方在 PigeonBox 桌面版「设备直传 → 接收」贴入口令，或在对方电脑执行 <code>p2pc recv 口令</code></p>
-        </div>
-        <div id="p2p-pair-card" hidden style="margin-top:10px;padding:10px 12px;border:1px solid rgba(0,0,0,.12);border-radius:10px;text-align:center">
-          <p class="tip" style="margin:0 0 8px">设备 <b id="p2p-pair-from"></b> 请求连接，是否接受？</p>
-          <button class="btn-ghost" id="p2p-accept">接受</button>
-          <button class="btn-ghost" id="p2p-deny">拒绝</button>
-        </div>
-        <p class="tip" id="p2p-hint" style="display:none"></p>
-        <button class="link-btn" type="button" id="recv-pair-creator">或亮码等对方推（我收文件，对方输码连接）</button>
-        <div class="path-chip" id="p2p-path"></div>
-        <pre class="log" id="p2p-log"></pre>
-        <button class="btn-quiet btn-block" id="p2p-cancel">取消传输</button>
-        <div class="err" id="p2p-err"></div>
-
         <div class="spacer"></div>
-        <p class="tip" id="p2p-note">设备直传已独立为 PigeonBeam（信鸽直传）应用，请安装 PigeonBeam 后使用；本客户端不再内置直传组件。</p>
+        <p class="tip">本客户端专注「连接服务器」这一件事：连上后窗口内就是该服务器的完整界面（分享、取件、文件管理、设置都在那边）。</p>
       </section>
     </div>
   </main>
