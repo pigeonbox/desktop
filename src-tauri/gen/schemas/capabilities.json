@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"主窗默认能力(仅本地上下文:显式 local=true,远程 URL 不获任何权限——主窗会导航到用户服务器页面,远程内容不得触达任何命令;dialog 插件供设备直传选文件)","local":true,"windows":["main"],"permissions":["core:default","dialog:default"]}}
+{"default":{"identifier":"default","description":"主窗默认能力(仅本地上下文:显式 local=true,远程 URL 不获任何权限——主窗会导航到用户服务器页面,远程内容不得触达任何命令)","local":true,"windows":["main"],"permissions":["core:default"]}}
