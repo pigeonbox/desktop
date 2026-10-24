@@ -2200,7 +2200,7 @@ dependencies = [
 
 [[package]]
 name = "pigeonbox-desktop"
-version = "3.3.24"
+version = "3.3.25"
 dependencies = [
  "serde",
  "serde_json",
