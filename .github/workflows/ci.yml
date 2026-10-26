@@ -24,6 +24,19 @@ jobs:
         run: cargo check --workspace --manifest-path src-tauri/Cargo.toml
       - name: cargo test
         run: cargo test --workspace --manifest-path src-tauri/Cargo.toml
+      # 测试数下限守卫（2026-10-26 审计 P1）：此前 `cargo test` 恒绿但**零
+      # 断言**——URL 归一、设置页导航、config.json 持久化三条最易回归的路径
+      # 无任何自动化保护（托盘「服务器设置」失效与 URL 大小写不敏感缺陷正是
+      # 因此长期未被发现）。断言已注册测试数 ≥ 下限，避免测试面再次退化成
+      # 空跑（下限随新增用例上调）。
+      - name: 测试数下限守卫
+        run: |
+          n=$(cargo test --workspace --manifest-path src-tauri/Cargo.toml -- --list 2>/dev/null | grep -c ': test$' || true)
+          echo "已注册测试数: $n"
+          if [ "$n" -lt 9 ]; then
+            echo "✗ 测试数 $n < 9：测试面退化成空跑"
+            exit 1
+          fi
       # 告警先观察，收敛为 0 后再加 -D warnings 升门禁
       - name: cargo clippy
         run: cargo clippy --workspace --manifest-path src-tauri/Cargo.toml

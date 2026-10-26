@@ -24,12 +24,16 @@
       let url = $('url').value.trim();
       // 明文 HTTP 确认（2026-10-05 审计：无 scheme 时 Rust 侧默认补 http://，
       // 内网 NAS 场景保留该便利，但须用户知情——凭据与分享内容明文传输）
-      const target = url.startsWith('http://') ? url
+      // scheme 大小写不敏感（HTTP:// 与 http:// 同义，2026-10-26 审计 P1）：
+      // 此前用 startsWith('http://') 判大小写敏感 ⇒ "HTTP://box.local" 走明文
+      // 却弹不出确认框。口径与 Rust 侧 normalize_url / has_scheme 对齐。
+      const httpScheme = /^http:\/\//i;
+      const target = httpScheme.test(url) ? url
         : (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url) && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/.test(url)) ? 'http://' + url
         : null;
       const eff = target || url;
-      if (eff.startsWith('http://')) {
-        const host = eff.replace(/^http:\/\//, '').split(/[\/ :]/)[0];
+      if (httpScheme.test(eff)) {
+        const host = eff.replace(/^http:\/\//i, '').split(/[\/ :]/)[0];
         // 内网/回环免确认:主机名精确匹配,或私网段前缀
         // (2026-10-11 修复:原模式尾部误留一个字面空格,导致 10./192.168. 等
         // 内网地址永远判不中,每个 http:// 地址都弹明文确认框)
