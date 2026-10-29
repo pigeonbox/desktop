@@ -1,6 +1,6 @@
 [package]
 name = "pigeonbox-desktop"
-version = "4.0.9"
+version = "4.0.10"
 description = "PigeonBox 桌面客户端——托盘常驻连接你的文件快递柜"
 edition = "2021"
 
