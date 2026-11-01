@@ -16,3 +16,25 @@ tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
+
+# ── 一等取件端 ────────────────────────────────────────────────────────────
+# reqwest：轮询 Box 的「我的分享 / 我的通知」两个面。
+#   · blocking 客户端（轮询跑在专用 std::thread 上，不占 async runtime）；
+#   · TLS 走 native-tls（Linux 需 libssl-dev——CI 与 release 脚本都已装）。
+#     刻意**不用** rustls/aws-lc-rs：后者要 cmake + nasm，Windows 发布构建有风险。
+reqwest = { version = "0.13", default-features = false, features = [
+  "blocking",
+  "json",
+  "charset",
+  "http2",
+  "system-proxy",
+  "native-tls",
+] }
+
+# API Key 存系统钥匙串（macOS Keychain / Windows 凭据管理器 / Linux Secret Service）
+# ——**不明文落盘**。keyring v4 默认特性 v1 即三平台原生后端。
+keyring = "4"
+
+# 托盘通知（系统级 toast）与剪贴板写入（只放 6 位取件码）。
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
