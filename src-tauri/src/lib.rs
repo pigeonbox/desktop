@@ -412,22 +412,26 @@ fn copy_pickup_code(app: AppHandle, code: String) -> Result<(), String> {
     let known = with_state(&app, |s| {
         s.pending
             .iter()
-            .any(|item| item.pickup_code == code)
+            .find(|item| item.pickup_code == code)
+            .map(|item| item.encrypted)
     });
-    if !known {
+    let Some(encrypted) = known else {
         return Err("该取件码不在当前待取清单里".into());
-    }
-    copy_code_to_clipboard(&app, &code)
+    };
+    copy_code_to_clipboard(&app, &code, encrypted)
 }
 
 /// 写剪贴板：只写 6 位取件码。
-fn copy_code_to_clipboard(app: &AppHandle, code: &str) -> Result<(), String> {
+///
+/// `encrypted` 只影响提示文案：密件复制到的只是两因子之一
+/// ⇒ toast 必须指路浏览器端（`pickup::copy_toast_body`）。
+fn copy_code_to_clipboard(app: &AppHandle, code: &str, encrypted: bool) -> Result<(), String> {
     let payload = pickup::clipboard_payload(code)?;
     app.clipboard()
         .write_text(payload)
         .map_err(|e| format!("写入剪贴板失败: {e}"))?;
     with_state(app, |s| s.last_copied = Some(code.to_string()));
-    notify_toast(app, "取件码已复制", "剪贴板里只有 6 位取件码（不含链接与口令）");
+    notify_toast(app, "取件码已复制", pickup::copy_toast_body(encrypted));
     Ok(())
 }
 
@@ -586,13 +590,13 @@ fn on_tray_menu(app: &AppHandle, id: &str) {
         }
         "pickup-copy" => {
             // 复制最新一件的取件码。
-            let code = with_state(app, |s| {
+            let picked = with_state(app, |s| {
                 s.pending
                     .first()
-                    .map(|item| item.pickup_code.clone())
+                    .map(|item| (item.pickup_code.clone(), item.encrypted))
             });
-            if let Some(code) = code {
-                if let Err(e) = copy_code_to_clipboard(app, &code) {
+            if let Some((code, encrypted)) = picked {
+                if let Err(e) = copy_code_to_clipboard(app, &code, encrypted) {
                     notify_toast(app, "取件码复制失败", &e);
                 }
             }
@@ -602,13 +606,13 @@ fn on_tray_menu(app: &AppHandle, id: &str) {
                 .trim_start_matches("pickup-item:")
                 .parse()
                 .unwrap_or(usize::MAX);
-            let code = with_state(app, |s| {
+            let picked = with_state(app, |s| {
                 s.pending
                     .get(idx)
-                    .map(|item| item.pickup_code.clone())
+                    .map(|item| (item.pickup_code.clone(), item.encrypted))
             });
-            if let Some(code) = code {
-                if let Err(e) = copy_code_to_clipboard(app, &code) {
+            if let Some((code, encrypted)) = picked {
+                if let Err(e) = copy_code_to_clipboard(app, &code, encrypted) {
                     notify_toast(app, "取件码复制失败", &e);
                 }
             }
