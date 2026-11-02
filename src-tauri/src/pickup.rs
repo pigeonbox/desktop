@@ -7,11 +7,16 @@
 // 这条承诺由同文件的单测钉死（见 tests 模块）。
 //
 // 「待取」的判定口径（Box 侧字段口径见 core 的 share.thrift / app/share）：
-//   - 有 6 位取件码（E2E 密文分享与历史数据没有取件码 ⇒ 不算可取件）；
+//   - 有 6 位取件码（**口令型 E2E 密文分享自 core#30 起也铸码**＝码+口令两因子；
+//     旧形态 URL-hash-key E2E 与历史数据没有取件码 ⇒ 不算可取件）；
 //   - viewer_count == 0（还没被任何人取走）；
 //   - 未过期（is_expired == false）；
 //   - 不在回收站（deleted_at 为空）；
 //   - 未被管控（status == "normal"，blocked/pending_review 拒绝取件）。
+//
+// ⚠️ 密文件（encrypted）**照常列入待取**，但桌面端不解密 ⇒ 一律标注
+// 「端到端加密，请在浏览器端取件」（托盘行 + 复制后 toast），
+// 避免用户把「一键取件」当成拿到明文。
 //
 // ⚠️ Box 侧目前**没有**「我的待收件列表」端点，也没有任何字段能区分
 // 「投递到我这儿的件」与「我自己寄出去的件」（core 的 file_codes 无 channel 列，
@@ -53,6 +58,18 @@ pub fn clipboard_payload(code: &str) -> Result<String, String> {
     Ok(code.to_string())
 }
 
+/// 复制取件码后的提示文案（纯函数 ⇒ 可单测）。
+///
+/// 密件必须指路浏览器端：桌面端没有解密能力，复制到的只是两因子之一，
+/// 不提示就会被当成「一键取件 = 拿到明文」。
+pub fn copy_toast_body(encrypted: bool) -> &'static str {
+    if encrypted {
+        "端到端加密，请在浏览器端取件（剪贴板里只有 6 位取件码）"
+    } else {
+        "剪贴板里只有 6 位取件码（不含链接与口令）"
+    }
+}
+
 /// Box 侧「我的分享」列表里的一条（只取本客户端用得到的字段）。
 ///
 /// 未列出的字段（分享码等）由 serde 直接忽略 ⇒ 结构体保持最小、字段不腐化。
@@ -82,6 +99,12 @@ pub struct ShareItem {
     /// 创建时间（RFC3339Nano）。
     #[serde(default)]
     pub created_at: String,
+    /// 是否端到端加密（口令型 E2E）。
+    ///
+    /// Box 侧 `UserShareItemData.encrypted`（contracts ≥ v0.20.12 下发）；
+    /// 老 Box 不带这个键 ⇒ serde 缺省 false = 「不是密文」，行为与旧版一致。
+    #[serde(default)]
+    pub encrypted: bool,
 }
 
 /// Box 侧「我的通知」列表里的一条。
@@ -138,23 +161,34 @@ pub struct PendingItem {
     pub created_at: String,
     /// 是否投递到件（由到件通知反查得出）。
     pub delivered: bool,
+    /// 是否端到端加密（口令型 E2E）。
+    ///
+    /// 密文件**照常列入待取**（取件码 + 口令两因子，复制码仍有用），
+    /// 但桌面端没有解密能力 ⇒ 必须标注「端到端加密，请在浏览器端取件」，
+    /// 不能让用户以为一键取件就能拿到明文。
+    pub encrypted: bool,
 }
 
 impl PendingItem {
     /// 托盘菜单项的展示文本。
     ///
-    /// 形如 `123456 · 合同.pdf · 2.0 KB`。**不含链接、不含口令**。
+    /// 形如 `123456 · 合同.pdf · 2.0 KB`；端到端加密件追加 ` · 🔒端到端加密`。
+    /// **不含链接、不含口令**。
     pub fn tray_label(&self) -> String {
         let name = if self.file_name.trim().is_empty() {
             "文本分享".to_string()
         } else {
             self.file_name.clone()
         };
-        if self.size > 0 {
+        let mut label = if self.size > 0 {
             format!("{} · {} · {}", self.pickup_code, name, format_size(self.size))
         } else {
             format!("{} · {}", self.pickup_code, name)
+        };
+        if self.encrypted {
+            label.push_str(" · 🔒端到端加密");
         }
+        label
     }
 }
 
@@ -249,6 +283,7 @@ pub fn select_pending(
                 size: s.size,
                 created_at: s.created_at.clone(),
                 delivered: is_delivered,
+                encrypted: s.encrypted,
             })
         })
         .collect();
@@ -289,6 +324,7 @@ mod tests {
             status: "normal".into(),
             deleted_at: None,
             created_at: "2026-11-01T10:00:00Z".into(),
+            encrypted: false,
         }
     }
 
@@ -505,6 +541,7 @@ mod tests {
             size: 10,
             created_at: String::new(),
             delivered: true,
+            encrypted: false,
         };
         let label = item.tray_label();
         assert!(label.contains("A1B2C3"));
@@ -525,5 +562,55 @@ mod tests {
         assert_eq!(format_size(512), "512 B");
         assert_eq!(format_size(2048), "2.0 KB");
         assert_eq!(format_size(5 * 1024 * 1024), "5.0 MB");
+    }
+
+    // ── 端到端加密件：识别并提示（不解密） ──
+
+    #[test]
+    fn share_item_encrypted_defaults_false_when_missing() {
+        // 老 Box 不下发 encrypted 键 ⇒ 缺字段 = false = 「不是密文」，行为与旧版一致。
+        let s: ShareItem = serde_json::from_str(r#"{"pickup_code":"A1B2C3"}"#).unwrap();
+        assert!(!s.encrypted);
+    }
+
+    #[test]
+    fn share_item_encrypted_parses_true() {
+        let s: ShareItem =
+            serde_json::from_str(r#"{"pickup_code":"A1B2C3","encrypted":true}"#).unwrap();
+        assert!(s.encrypted);
+    }
+
+    #[test]
+    fn tray_label_marks_encrypted() {
+        let mut item = PendingItem {
+            pickup_code: "A1B2C3".into(),
+            file_name: "合同.pdf".into(),
+            size: 10,
+            created_at: String::new(),
+            delivered: false,
+            encrypted: true,
+        };
+        let label = item.tray_label();
+        assert!(label.contains("端到端加密"), "密件托盘行必须标注: {label}");
+        // 非密件不带标注
+        item.encrypted = false;
+        assert!(!item.tray_label().contains("端到端加密"));
+    }
+
+    #[test]
+    fn select_pending_keeps_encrypted_and_carries_flag() {
+        // 密件照常待取（取件码 + 口令两因子），但 encrypted 标志必须传到 PendingItem。
+        let mut s = share(Some("A1B2C3"));
+        s.encrypted = true;
+        let out = select_pending(&[s], &BTreeSet::new(), Scope::All);
+        assert_eq!(out.len(), 1);
+        assert!(out[0].encrypted);
+    }
+
+    #[test]
+    fn copy_toast_body_points_encrypted_to_browser() {
+        assert!(copy_toast_body(true).contains("浏览器"));
+        assert!(copy_toast_body(true).contains("端到端加密"));
+        assert!(!copy_toast_body(false).contains("浏览器"));
     }
 }

@@ -161,6 +161,13 @@
         tag.textContent = item.delivered ? '投递到件' : '未取走';
         row.appendChild(tag);
 
+        if (item.encrypted) {
+          const enc = document.createElement('span');
+          enc.className = 'pickup-tag';
+          enc.textContent = '🔒 端到端加密 · 请在浏览器端取件';
+          row.appendChild(enc);
+        }
+
         const btn = document.createElement('button');
         btn.className = 'btn-ghost';
         btn.textContent = '复制取件码';

@@ -33,12 +33,14 @@ jobs:
       # 「只放 6 位取件码」的硬边界、到件通知解析、API Key 形状校验、
       # Box 客户端 URL/鉴权头/真 HTTP 往返（打本地 mock Box）、
       # 托盘清单与本地 origin 闸等用例）。
+      # 2026-11-02：端到端加密件识别提示后 51 → 56（encrypted 缺省/解析、
+      # 密件托盘标注、待取清单传 encrypted 标志、复制提示文案指路浏览器）。
       - name: 测试数下限守卫
         run: |
           n=$(cargo test --workspace --manifest-path src-tauri/Cargo.toml -- --list 2>/dev/null | grep -c ': test$' || true)
           echo "已注册测试数: $n"
-          if [ "$n" -lt 51 ]; then
-            echo "✗ 测试数 $n < 51：测试面退化成空跑"
+          if [ "$n" -lt 56 ]; then
+            echo "✗ 测试数 $n < 56：测试面退化成空跑"
             exit 1
           fi
       # 告警先观察，收敛为 0 后再加 -D warnings 升门禁
