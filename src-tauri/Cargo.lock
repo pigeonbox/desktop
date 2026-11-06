@@ -3062,7 +3062,7 @@ dependencies = [
 
 [[package]]
 name = "pigeonbox-desktop"
-version = "5.0.0"
+version = "5.1.0"
 dependencies = [
  "keyring",
  "reqwest",
