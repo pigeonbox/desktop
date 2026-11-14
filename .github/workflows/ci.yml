@@ -47,9 +47,11 @@ jobs:
           fi
       # 前端明文 HTTP 确认的内网判据（ui/local-http.js）单测：#145 修复后该判定
       # 是凭据明文传输的唯一用户知情闸。仓内无 package.json/前端检查入口 ⇒
-      # 直接用 node --test 跑 ui/ 下的 *.test.js（与本地跑法同源）。
+      # 直接用 node --test 跑。⚠️ 显式传文件通配（bash 展开）：runner 的
+      # Node 24 把 "ui/" 目录参数当模块加载（MODULE_NOT_FOUND），目录扫描
+      # 只在部分版本可用。
       - name: 前端判定函数单测
-        run: node --test ui/
+        run: node --test ui/*.test.js
       # 告警先观察，收敛为 0 后再加 -D warnings 升门禁
       - name: cargo clippy
         run: cargo clippy --workspace --manifest-path src-tauri/Cargo.toml
