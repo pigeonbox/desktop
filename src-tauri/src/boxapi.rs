@@ -1,7 +1,10 @@
 // 与 Box（core 服务端）之间的**最小** HTTP 客户端：只取两个面。
 //
-//   GET {base}/api/v1/user/shares?status=active&page=1&page_size=50
-//   GET {base}/api/v1/notifies/mine?page=1&page_size=50
+//   GET {base}/api/v1/user/shares?status=active&page=N&page_size=50
+//   GET {base}/api/v1/notifies/mine?page=N&page_size=50
+//
+// 两个面都按响应 total **翻页取全**（#147：此前硬编码 page=1 只取第一页
+// 50 条 ⇒ 超过一页的老待取件漏进托盘、delivered 口径永久漏报）。
 //
 // 两个端点都挂在 core 的 `UserOrAPIKey` 中间件上（gen/router/share/middleware.go
 // 的 `_apiMw` 与 gen/router/notify/middleware.go 的 `_apiMw`）⇒ **API Key 可用**
@@ -15,8 +18,13 @@ use crate::pickup::{Notice, ShareItem};
 use serde::Deserialize;
 use url::Url;
 
-/// 取件列表单页条数（core 的 UserSharePolicy / NotifyPolicy 上限都是 100 ⇒ 取 50）。
+/// 单页条数（core 的 UserSharePolicy / NotifyPolicy 上限是 100 ⇒ 取 50，
+/// 少于上限只为响应体更小；超出一页的部分由 fetch_all 按 total 翻页取全）。
 const PAGE_SIZE: u32 = 50;
+
+/// 翻页上限（防服务端 total 异常时无限拉取）：50 × 500 = 25000 条。
+/// 超过即报错拒绝返回残缺清单——静默截断比报错危险（#147）。
+const MAX_PAGES: u32 = 500;
 
 /// API Key 明文前缀（core/app/user/service.go 的 `apiKeyPrefix`）。
 ///
@@ -53,17 +61,24 @@ struct Envelope<T> {
     data: Option<T>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct SharesData {
+/// 列表 data（items + total；total 驱动翻页，#147）。
+///
+/// 刻意不 derive Default：泛型结构的 Default 会把 T: Default 摆进派生链，
+/// 而 ListData 的缺省在 fetch_all 里用 match 显式给（不依赖 T: Default）。
+#[derive(Debug, Deserialize)]
+#[serde(bound(deserialize = "T: serde::de::DeserializeOwned"))]
+struct ListData<T> {
     #[serde(default)]
-    items: Vec<ShareItem>,
+    items: Vec<T>,
+    #[serde(default)]
+    total: u64,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct NoticesData {
-    #[serde(default)]
-    items: Vec<Notice>,
-}
+// 具名别名只服务测试（信封解析用例）；生产路径统一走 fetch_all 的 ListData<T>。
+#[cfg(test)]
+type SharesData = ListData<ShareItem>;
+#[cfg(test)]
+type NoticesData = ListData<Notice>;
 
 /// Box 客户端。
 pub struct BoxClient {
@@ -144,26 +159,56 @@ impl BoxClient {
         Ok(env)
     }
 
-    /// 我账号下**未过期**的分享列表（core 的 `status=active` 口径：
-    /// 未过期且还有剩余取件次数；软删除的不在其中）。
-    pub fn list_shares(&self) -> Result<Vec<ShareItem>, String> {
-        let mut url = self.endpoint("/api/v1/user/shares")?;
-        url.query_pairs_mut()
-            .append_pair("status", "active")
-            .append_pair("page", "1")
-            .append_pair("page_size", &PAGE_SIZE.to_string());
-        let env = self.get_json::<SharesData>(url)?;
-        Ok(env.data.map(|d| d.items).unwrap_or_default())
+    /// 按 total 翻页拉全一个列表面（#147）。
+    ///
+    /// 终止条件：取够 total / 服务端不再给条数（空页兜底防死循环）；
+    /// 翻满 MAX_PAGES 仍不足 ⇒ 报错而不是返回残缺清单。
+    fn fetch_all<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        extra: &[(&str, &str)],
+    ) -> Result<Vec<T>, String> {
+        let mut all: Vec<T> = Vec::new();
+        let mut page: u32 = 1;
+        loop {
+            let mut url = self.endpoint(path)?;
+            {
+                let mut q = url.query_pairs_mut();
+                for (k, v) in extra {
+                    q.append_pair(k, v);
+                }
+                q.append_pair("page", &page.to_string());
+                q.append_pair("page_size", &PAGE_SIZE.to_string());
+            }
+            let env = self.get_json::<ListData<T>>(url)?;
+            let (items, total) = match env.data {
+                Some(d) => (d.items, d.total),
+                None => (Vec::new(), 0),
+            };
+            let n = items.len();
+            all.extend(items);
+            if n == 0 || all.len() as u64 >= total {
+                break;
+            }
+            page += 1;
+            if page > MAX_PAGES {
+                return Err(format!(
+                    "清单不完整：已翻 {MAX_PAGES} 页仍不足 total={total}，拒绝截断返回"
+                ));
+            }
+        }
+        Ok(all)
     }
 
-    /// 我的通知列表（最新在前）。用于反查「投递到件」的取件码。
+    /// 我账号下**未过期**的分享列表（core 的 `status=active` 口径：
+    /// 未过期且还有剩余取件次数；软删除的不在其中）。按 total 翻页取全。
+    pub fn list_shares(&self) -> Result<Vec<ShareItem>, String> {
+        self.fetch_all("/api/v1/user/shares", &[("status", "active")])
+    }
+
+    /// 我的通知列表（最新在前）。用于反查「投递到件」的取件码。按 total 翻页取全。
     pub fn list_notices(&self) -> Result<Vec<Notice>, String> {
-        let mut url = self.endpoint("/api/v1/notifies/mine")?;
-        url.query_pairs_mut()
-            .append_pair("page", "1")
-            .append_pair("page_size", &PAGE_SIZE.to_string());
-        let env = self.get_json::<NoticesData>(url)?;
-        Ok(env.data.map(|d| d.items).unwrap_or_default())
+        self.fetch_all("/api/v1/notifies/mine", &[])
     }
 }
 
@@ -359,6 +404,45 @@ mod tests {
         assert!(seen[0]
             .to_ascii_lowercase()
             .contains("authorization: bearer pb_sk_testkey"));
+    }
+
+    #[test]
+    fn list_shares_paginates_until_total_reached() {
+        // total > 单页实际条数 ⇒ 必须翻页取全（#147：此前硬编码 page=1 只取一页）。
+        let page1 = r#"{"code":0,"message":"ok","data":{"items":[{"pickup_code":"AAAAAA","file_name":"1.pdf","size":1,"viewer_count":0,"is_expired":false,"status":"normal","created_at":"2026-11-01T10:00:00Z"}],"total":3}}"#;
+        let page2 = r#"{"code":0,"message":"ok","data":{"items":[{"pickup_code":"BBBBBB","file_name":"2.pdf","size":2,"viewer_count":0,"is_expired":false,"status":"normal","created_at":"2026-11-01T09:00:00Z"},{"pickup_code":"CCCCCC","file_name":"3.pdf","size":3,"viewer_count":0,"is_expired":false,"status":"normal","created_at":"2026-11-01T08:00:00Z"}],"total":3}}"#;
+        let (base, server) = spawn_mock(vec![
+            ("page=2&page_size", page2),
+            ("page=1&page_size", page1),
+        ]);
+        let client = BoxClient::new(&base, "pb_sk_testkey").expect("建客户端");
+        let items = client.list_shares().expect("拉分享");
+        assert_eq!(
+            items.len(),
+            3,
+            "total=3 却只取回 1 页 ⇒ 老待取件漏进托盘（#147）"
+        );
+
+        let seen = server.join().expect("mock 线程结束");
+        assert_eq!(seen.len(), 2, "应按 total 翻到第 2 页，实发 {} 次请求", seen.len());
+        assert!(seen[0].contains("page=1"), "第一页: {}", seen[0]);
+        assert!(seen[1].contains("page=2"), "第二页: {}", seen[1]);
+    }
+
+    #[test]
+    fn list_notices_paginate_until_total_reached() {
+        // 通知面同走翻页（delivered 口径靠通知反查，漏页=永久漏报，#147）。
+        let page1 = r#"{"code":0,"message":"ok","data":{"items":[{"type":"request_received","content":"取件码: AAAAAA"}],"total":2}}"#;
+        let page2 = r#"{"code":0,"message":"ok","data":{"items":[{"type":"request_received","content":"取件码: BBBBBB"}],"total":2}}"#;
+        let (base, server) = spawn_mock(vec![
+            ("page=2&page_size", page2),
+            ("page=1&page_size", page1),
+        ]);
+        let client = BoxClient::new(&base, "pb_sk_testkey").expect("建客户端");
+        let notices = client.list_notices().expect("拉通知");
+        assert_eq!(notices.len(), 2, "total=2 却只取回 1 页（#147）");
+        let seen = server.join().expect("mock 线程结束");
+        assert_eq!(seen.len(), 2, "应翻页取全，实发 {} 次请求", seen.len());
     }
 
     #[test]

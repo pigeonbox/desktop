@@ -35,14 +35,21 @@ jobs:
       # 托盘清单与本地 origin 闸等用例）。
       # 2026-11-02：端到端加密件识别提示后 51 → 56（encrypted 缺省/解析、
       # 密件托盘标注、待取清单传 encrypted 标志、复制提示文案指路浏览器）。
+      # 2026-11-14：#143-#147 修复后 56 → 63（命令闸机械守卫、poll/scope 互斥与
+      # 原子写源码守卫、并发台账三态、分享/通知翻页两条）。
       - name: 测试数下限守卫
         run: |
           n=$(cargo test --workspace --manifest-path src-tauri/Cargo.toml -- --list 2>/dev/null | grep -c ': test$' || true)
           echo "已注册测试数: $n"
-          if [ "$n" -lt 56 ]; then
-            echo "✗ 测试数 $n < 56：测试面退化成空跑"
+          if [ "$n" -lt 63 ]; then
+            echo "✗ 测试数 $n < 63：测试面退化成空跑"
             exit 1
           fi
+      # 前端明文 HTTP 确认的内网判据（ui/local-http.js）单测：#145 修复后该判定
+      # 是凭据明文传输的唯一用户知情闸。仓内无 package.json/前端检查入口 ⇒
+      # 直接用 node --test 跑 ui/ 下的 *.test.js（与本地跑法同源）。
+      - name: 前端判定函数单测
+        run: node --test ui/
       # 告警先观察，收敛为 0 后再加 -D warnings 升门禁
       - name: cargo clippy
         run: cargo clippy --workspace --manifest-path src-tauri/Cargo.toml
