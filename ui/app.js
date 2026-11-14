@@ -49,13 +49,13 @@
         : null;
       const eff = target || url;
       if (httpScheme.test(eff)) {
-        const host = eff.replace(/^http:\/\//i, '').split(/[\/ :]/)[0];
-        // 内网/回环免确认:主机名精确匹配,或私网段前缀
-        // (2026-10-11 修复:原模式尾部误留一个字面空格,导致 10./192.168. 等
-        // 内网地址永远判不中,每个 http:// 地址都弹明文确认框)
-        const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(host) ||
-          /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
-        if (!local && !confirm('将以明文 HTTP 连接（内容与凭据不加密传输）。\n' + eff + '\n\n继续连接吗？')) {
+        // 内网/回环免确认的判据收敛到 ui/local-http.js（可单测，#145）：
+        // URL 解析取 host + 只认 IP 字面量——域名（10.evil.com）一律要确认，
+        // http://[::1] 判回环不再误弹。
+        if (
+          needsClearHttpConfirm(eff) &&
+          !confirm('将以明文 HTTP 连接（内容与凭据不加密传输）。\n' + eff + '\n\n继续连接吗？')
+        ) {
           return;
         }
       }
