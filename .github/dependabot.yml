@@ -7,6 +7,8 @@ updates:
     schedule:
       interval: weekly
   - package-ecosystem: cargo
-    directory: /
+    # Cargo.toml 在 src-tauri/（工作区唯一 crate）；指 / 会 dependency_file_not_found
+    # ⇒ cargo 更新自配置以来一直静默失败（Dependabot Updates 红于 2026-11-12）。
+    directory: /src-tauri
     schedule:
       interval: weekly
