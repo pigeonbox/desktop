@@ -12,9 +12,10 @@ on:
         type: string
 
 concurrency:
-  # 手动 dispatch 重跑与 tag 自动触发可能并发跑同一版本:两边都 gh release upload
-  # --clobber 写同一 Release,先到先写=后写静默覆盖(不报错,只是产物被换掉)。
-  # 按目标版本串行化;cancel-in-progress:false——发布中途取消比排队更糟。
+  # 手动 dispatch 重跑与 tag 自动触发可能并发跑同一版本（#157 5.9.0 实录同 tag
+  # 三跑:17:11 push + 17:31/17:48 dispatch）：两边都上传同一 Release，后完成者
+  # 会静默覆盖已发布字节。按目标版本串行化；cancel-in-progress:false——发布
+  # 中途取消比排队更糟。
   # 键取目标版本而非 github.ref:dispatch 的 ref 是分支、tag 触发的 ref 是 tag,
   # 用 ref 分组等于没分组(两种触发照样并发)。
   group: ${{ github.workflow }}-${{ inputs.version || github.ref_name }}
@@ -24,7 +25,72 @@ permissions:
   contents: write
 
 jobs:
+  # 发布幂等闸（#157）：本仓 Release 已有「完成标记」且标记 commit=tag commit、
+  # 标记内全部资产都在时，跳过整个重建 —— 不能用新构建的字节覆盖已发布产物。
+  # 完成标记由 finalize 作业在所有平台构建成功后上传（含每个资产的 sha256）。
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      REL_TAG: ${{ inputs.version || github.ref_name }}
+    outputs:
+      skip: ${{ steps.check.outputs.skip }}
+      reason: ${{ steps.check.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.REL_TAG }}
+      - id: check
+        name: 检查本仓 Release 是否已完整发布
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.REL_TAG }}
+        run: |
+          set -euo pipefail
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          commit="$(git rev-parse HEAD)"
+          tmp="$(mktemp -d)"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "reason=本仓无 $TAG Release，需要构建" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --pattern release-complete.json --dir "$tmp" --clobber 2>/dev/null; then
+            echo "reason=Release 缺少完成标记 release-complete.json（上次未完整收尾），需要重建/补全" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! jq -e . "$tmp/release-complete.json" >/dev/null 2>&1; then
+            echo "reason=完成标记 JSON 损坏，需要重建" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          got_commit="$(jq -r '.commit // empty' "$tmp/release-complete.json")"
+          if [ "$got_commit" != "$commit" ]; then
+            echo "reason=完成标记 commit=$got_commit ≠ tag commit=$commit，需要重建" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[].name' > "$tmp/names"
+          missing=0
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            grep -Fxq "$name" "$tmp/names" || { echo "缺少资产: $name"; missing=1; }
+          done < <(jq -r '.assets[].name' "$tmp/release-complete.json")
+          if [ "$missing" -ne 0 ]; then
+            echo "reason=完成标记列出的资产不齐，需要补全" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+          echo "reason=本仓 Release 已完整（commit=$commit），跳过重建以防覆盖已发布字节" >> "$GITHUB_OUTPUT"
+      - name: 预检结论
+        run: echo "${{ steps.check.outputs.reason }}"
+
   build:
+    needs: preflight
+    # 已完整发布则不再构建：这是防止 --clobber 覆盖已发布字节的第一道闸。
+    if: needs.preflight.outputs.skip != 'true'
     env:
       REL_TAG: ${{ inputs.version || github.ref_name }}
     strategy:
@@ -63,6 +129,17 @@ jobs:
           V2=$(grep -m1 '^version = ' src-tauri/Cargo.toml | sed 's/[^0-9.]*//g')
           [ "$V1" = "${VER#desktop-v}" ] && [ "$V2" = "${VER#desktop-v}" ] \
             || { echo "::error::版本双写不一致 tag=$VER tauri=$V1 cargo=$V2——发版走 hub 列车 bump"; exit 1; }
+      # 可复现构建标志（#157）：时间戳取 tag commit 时间而非构建时刻，
+      # 同一 commit 的多次重跑共享同一 SOURCE_DATE_EPOCH；ZERO_AR_DATE 抹掉
+      # ar 归档内嵌时间。macOS dmg 的 hdiutil 时间戳上游尚不认这些变量，
+      # 所以最终防线仍是 preflight 的「完成即跳过」。
+      - name: 固定可复现构建时间戳
+        id: repro
+        shell: bash
+        run: |
+          EPOCH="$(git log -1 --format=%ct)"
+          echo "epoch=$EPOCH" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$EPOCH（tag commit 时间，非构建时间）"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with: { node-version: "20" }
       - name: Rust setup
@@ -117,6 +194,12 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # #157 可复现构建标志：同一 tag 的重复构建共享同一时间戳。
+          SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+          ZERO_AR_DATE: "1"
+          CARGO_INCREMENTAL: "0"
+          TZ: UTC
+          LC_ALL: C
         with:
           tagName: ${{ env.REL_TAG }}
           releaseName: "PigeonBox Desktop ${{ env.REL_TAG }}"
@@ -129,6 +212,12 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # #157 可复现构建标志：同一 tag 的重复构建共享同一时间戳。
+          SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+          ZERO_AR_DATE: "1"
+          CARGO_INCREMENTAL: "0"
+          TZ: UTC
+          LC_ALL: C
         with:
           tagName: ${{ env.REL_TAG }}
           releaseName: "PigeonBox Desktop ${{ env.REL_TAG }}"
@@ -141,6 +230,12 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # #157 可复现构建标志：同一 tag 的重复构建共享同一时间戳。
+          SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}
+          ZERO_AR_DATE: "1"
+          CARGO_INCREMENTAL: "0"
+          TZ: UTC
+          LC_ALL: C
         with:
           tagName: ${{ env.REL_TAG }}
           releaseName: "PigeonBox Desktop ${{ env.REL_TAG }}"
@@ -149,21 +244,67 @@ jobs:
           prerelease: false
           args: ${{ matrix.args }}
 
+  # 全部平台构建成功后打「完成标记」（#157）：记录 tag commit + 每个资产的
+  # sha256。preflight 下次重跑据此判断「已完整发布」并跳过重建，避免新构建
+  # 的字节静默覆盖已发布产物。
+  finalize:
+    needs: [preflight, build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      REL_TAG: ${{ inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.REL_TAG }}
+      - name: 生成本仓 Release 完成标记
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.REL_TAG }}
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d)"
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            if gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir "$dir" --clobber; then ok=1; break; fi
+            sleep 10
+          done
+          [ "$ok" = 1 ] || { echo "::error::拉取本仓 Release 资产失败"; exit 1; }
+          rm -f "$dir/release-complete.json"
+          entries='[]'
+          for f in "$dir"/*; do
+            [ -f "$f" ] || continue
+            name="$(basename "$f")"
+            sum="$(sha256sum "$f" | awk '{print $1}')"
+            entries="$(jq -c --arg n "$name" --arg s "$sum" '. + [{"name":$n,"sha256":$s}]' <<<"$entries")"
+          done
+          jq -n --arg tag "$TAG" --arg commit "$(git rev-parse HEAD)" --argjson assets "$entries" \
+            '{tag:$tag,commit:$commit,assets:$assets}' > "$dir/release-complete.json"
+          gh release upload "$TAG" "$dir/release-complete.json" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "完成标记已上传：$(jq -r '.assets | length' "$dir/release-complete.json") 个资产"
+
   # 最终产物回挂生态主仓（产物放 pigeonbox/pigeonbox Releases）。
   # 跨仓操作 GITHUB_TOKEN 无权限，需在仓库 Secrets 配 DESKTOP_PAT（hub 仓写权限的 PAT）。
   # 断链必须响(2026-10-08 拔除 continue-on-error——PAT 失效静默放行只会让 hub 统一出口缺资产)。
   publish-to-hub:
-    needs: build
+    needs: [preflight, build, finalize]
+    # build 因「已完整发布」被跳过时仍要跑：只回挂，不重建。
+    if: always() && !cancelled() && needs.preflight.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') && (needs.finalize.result == 'success' || needs.finalize.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
       REL_TAG: ${{ inputs.version || github.ref_name }}
     steps:
-      - name: 回挂产物到生态主仓
+      - name: 回挂产物到生态主仓（先校验完成标记，再按摘要决定是否上传）
         env:
           GH_TOKEN: ${{ secrets.PB_BOT_TOKEN }}
           TAG: ${{ env.REL_TAG }}
         run: |
+          set -euo pipefail
           sleep 30
           VER="${TAG#desktop-}"
           NOTES=$(printf '%s\n\n---\n🗂 **组件仓库**: [pigeonbox/desktop](https://github.com/pigeonbox/desktop) · **完整变更日志**: [%s](https://github.com/pigeonbox/desktop/releases/tag/%s)\n🌐 **生态总览 / Latest**: [pigeonbox/pigeonbox](https://github.com/pigeonbox/pigeonbox/releases/latest)\n' \
@@ -173,21 +314,49 @@ jobs:
               --title "PigeonBox Desktop $VER" \
               --latest=false \
               --notes "${NOTES}"
-          mkdir -p /tmp/assets
-          # 等待 tauri-action 侧 Release 资产落盘(有重试,失败即响)
+          rm -rf /tmp/assets && mkdir -p /tmp/assets
+          # 等待本仓 Release 资产落盘(有重试,失败即响)
           ok=0
-          for i in 1 2 3 4 5 6; do
+          for _ in 1 2 3 4 5 6; do
             if gh release download "$TAG" --repo pigeonbox/desktop --dir /tmp/assets --clobber; then ok=1; break; fi
             sleep 20
           done
           [ "$ok" = 1 ] || { echo "::error::拉取本仓 Release 资产失败"; exit 1; }
+          SENTINEL=/tmp/assets/release-complete.json
+          [ -f "$SENTINEL" ] || { echo "::error::本仓 Release 缺少 release-complete.json，拒绝回挂未校验产物"; exit 1; }
+          # 完成标记 ↔ 本地下载字节逐项对账：防止有人/并发 run 在标记之后又换了资产。
+          while IFS= read -r row; do
+            name="$(jq -r '.name' <<<"$row")"
+            want="$(jq -r '.sha256' <<<"$row")"
+            [ "$name" = "release-complete.json" ] && continue
+            [ -f "/tmp/assets/$name" ] || { echo "::error::完成标记里的 $name 不在本仓 Release"; exit 1; }
+            got="$(sha256sum "/tmp/assets/$name" | awk '{print $1}')"
+            [ "$got" = "$want" ] || { echo "::error::本仓资产 $name sha256=$got ≠ 标记 $want（发布后被替换？）"; exit 1; }
+          done < <(jq -c '.assets[]' "$SENTINEL")
+          # hub 现有资产摘要（sha256:...）：一致跳过、缺失上传、不一致显式告警后修复。
+          # 不再无条件 --clobber，避免「后完成 run 静默覆盖」。
+          hub_assets="$(mktemp)"
+          if gh api "repos/pigeonbox/pigeonbox/releases/tags/$TAG" \
+              --jq '.assets[] | [.name, (.digest // "")] | @tsv' > "$hub_assets" 2>/dev/null; then :; fi
           for f in /tmp/assets/*; do
             [ -f "$f" ] || continue
-            gh release upload "$TAG" "$f" --repo pigeonbox/pigeonbox --clobber
+            name="$(basename "$f")"
+            [ "$name" = "release-complete.json" ] && continue
+            local_digest="sha256:$(sha256sum "$f" | awk '{print $1}')"
+            remote_digest="$(awk -F'\t' -v n="$name" '$1==n {print $2; exit}' "$hub_assets")"
+            if [ -z "$remote_digest" ]; then
+              echo "hub 缺 $name，上传"
+              gh release upload "$TAG" "$f" --repo pigeonbox/pigeonbox
+            elif [ "$remote_digest" = "$local_digest" ]; then
+              echo "hub $name 摘要一致，跳过"
+            else
+              echo "::warning::hub 资产 $name 摘要不一致（hub=$remote_digest local=$local_digest），用本仓已校验资产修复"
+              gh release upload "$TAG" "$f" --repo pigeonbox/pigeonbox --clobber
+            fi
           done
           # 组件回挂恒不为 Latest(Latest 属于 hub 生态快照 v*);release 已存在时也兜底纠偏
           gh release edit "$TAG" --repo pigeonbox/pigeonbox --latest=false || true
-          echo "已回挂到 pigeonbox/pigeonbox Releases"
+          echo "已回挂到 pigeonbox/pigeonbox Releases（$(find /tmp/assets -maxdepth 1 -type f ! -name release-complete.json | wc -l | tr -d ' ') 个产物）"
 
       - name: 回调 hub 列车编排器(唤醒 advance 核对完成度;回调丢失由 hub 15 分钟 sweep 兜底,不阻断发布)
         env:
