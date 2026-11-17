@@ -36,6 +36,8 @@ chk() {
 has()      { grep -Fq -- "$1" "$WF"; }
 count_eq() { [ "$(grep -Fc -- "$1" "$WF")" -eq "$2" ]; }
 count_ge() { [ "$(grep -Fc -- "$1" "$WF")" -ge "$2" ]; }
+# block_has 在某个 job 段内查串（段 = 该 job 行到下一个 job 行之间）。
+block_has() { printf '%s' "$1" | grep -Fq -- "$2"; }
 
 echo "── Release Desktop macOS runner 门禁"
 chk "matrix 只有一条 macos-latest（运行时一个 macOS job）" count_eq 'platform: macos-latest' 1
@@ -63,6 +65,20 @@ chk "hub 回挂按摘要比较，不再无条件 clobber" bash -c "grep -Fq 'rem
 chk "摘要不一致显式告警后才 clobber 修复" has '摘要不一致'
 chk "macOS 可复现时间戳 SOURCE_DATE_EPOCH" has 'SOURCE_DATE_EPOCH: ${{ steps.repro.outputs.epoch }}'
 chk "可复现归档标志 ZERO_AR_DATE" has 'ZERO_AR_DATE: "1"'
+
+# #162：tag push 触发时本仓 Release 不存在 ⇒ tauri-action 走 runtime-create ⇒
+# GITHUB_TOKEN 无权 create-a-release ⇒ 四平台 job 全红在最后一步（6.1.0 实录
+# run 43990425854）。修法=先用有写权限的 PAT 建骨架，让 tauri-action 走 upload。
+echo "── Release Desktop Release 骨架门禁（#162）"
+ensure_block="$(awk '/^  ensure-release:/{f=1;next} /^  [a-z][a-z-]*:/{f=0} f' "$WF")"
+chk "存在 ensure-release 作业（骨架先于构建）" has 'ensure-release:'
+chk "build 依赖 ensure-release" has 'needs: [preflight, ensure-release]'
+chk "ensure-release 段内用 gh release create 建骨架" block_has "$ensure_block" 'gh release create'
+chk "ensure-release 创建前校验 tag 存在" block_has "$ensure_block" '--verify-tag --target'
+chk "ensure-release 建骨架幂等（已存在则跳过）" block_has "$ensure_block" 'gh release view'
+chk "ensure-release 失败只告警不阻断构建" block_has "$ensure_block" '::warning::自动创建 Release 失败'
+chk "失败提示可操作（含手工建骨架命令）" block_has "$ensure_block" '请先手工建骨架'
+chk "组件 Release 不抢 Latest" block_has "$ensure_block" '--latest=false'
 
 if [ "$FAIL" -ne 0 ]; then
     echo "✗ Release Desktop 工作流门禁失败" >&2
