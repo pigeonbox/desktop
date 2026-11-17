@@ -87,8 +87,50 @@ jobs:
       - name: 预检结论
         run: echo "${{ steps.check.outputs.reason }}"
 
-  build:
+  # #162：Release 骨架必须**先存在**（tauri-action 的 runtime-create 分支无权建 Release）。
+  # tag push 触发时本仓 Release 通常不存在 ⇒ tauri-action 走 "Creating one." ⇒
+  # GitHub App 的 GITHUB_TOKEN 无权 create-a-release ⇒ 四个平台 job 全红在最后一步
+  # （6.1.0 实录 run 43990425854：构建全成功、产物路径都打印了，只有 create 失败）。
+  # 修法：先用有 contents:write 的 PAT 建骨架（幂等，已存在则跳过）⇒ tauri-action
+  # 走 "Found release" 的 upload 路径（6.0.0 实录成功路径）。
+  ensure-release:
     needs: preflight
+    if: needs.preflight.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      REL_TAG: ${{ inputs.version || github.ref_name }}
+    steps:
+      - name: 确保本仓 Release 存在（#162）
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.PB_BOT_TOKEN || secrets.GITHUB_TOKEN }}
+          TAG: ${{ env.REL_TAG }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${TAG} 已存在，跳过创建"
+            exit 0
+          fi
+          # PB_BOT_TOKEN 有 contents:write ⇒ 能建 Release；GITHUB_TOKEN 在 create
+          # 上可能被拒 ⇒ 失败只告警不阻断（下游 tauri-action 仍有一次机会，
+          # 且报错文案会指明下一步该做什么）。
+          if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+               --verify-tag --target "$TAG" \
+               --title "PigeonBox Desktop $TAG" \
+               --latest=false \
+               --notes "桌面客户端安装包（Windows / macOS / Linux amd64+arm64）：连接你的 PigeonBox 服务器（托盘→服务器设置→连接服务器）。设备间直传请使用 PigeonBeam（信鸽直传）。Linux 适配范围见 README 支持矩阵。"; then
+            echo "✓ Release ${TAG} 已创建"
+          else
+            echo "::warning::自动创建 Release 失败（当前 token 可能无 create 权限）。若下方 tauri 步骤报 'Resource not accessible by integration'，请先手工建骨架：gh release create ${TAG} --repo ${GITHUB_REPOSITORY} --latest=false --verify-tag --target ${TAG}，再重跑本工作流。"
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+              && echo "（复查：Release 已由并发任务创建）"
+          fi
+
+  build:
+    needs: [preflight, ensure-release]
     # 已完整发布则不再构建：这是防止 --clobber 覆盖已发布字节的第一道闸。
     if: needs.preflight.outputs.skip != 'true'
     env:
