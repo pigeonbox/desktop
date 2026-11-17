@@ -31,10 +31,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # #156：macOS 两个目标合并进**同一个** macos-latest(arm64) job 顺序构建。
+          # 此前拆成两个 job ⇒ 一趟发布要同时抢到两个 arm64 runner，容量紧张时
+          # 必有一个排队超时被取消（5.9.0 首跑实录）。arm64 runner 本就能交叉
+          # 编译 x86_64-apple-darwin（原 x86_64 腿也跑在同一镜像上），合并后
+          # arm64 runner 需求减半，且不再要求两腿同时就位。
           - platform: macos-latest
-            args: --target aarch64-apple-darwin
-          - platform: macos-latest
-            args: --target x86_64-apple-darwin
+            args: ""
           # Linux arm64 用 22.04(非 24.04): 构建机 glibc ≈ 产物地板,
           # 24.04 的 2.39 超过 deepin 23/统信 V25 的 2.38;守卫见下方步骤
           - platform: ubuntu-22.04
@@ -106,7 +109,35 @@ jobs:
             echo "::error::glibc 地板超限（$MAX > 2.35）：检查 runner 镜像是否被更换——Linux arm64 必须用 ubuntu-22.04-arm（ubuntu-24.04-arm 的 glibc 2.39 超过 deepin 23/统信 V25 的 2.38）"
             exit 1
           fi
-      - name: 构建并发布（tauri-action：产物进本仓 Release）
+      # #156：同一条 arm64 runner 上顺序构建两个 macOS 目标。两条 tauri-action
+      # 仍把产物传进同一个 Release，但不并发抢 runner ⇒ 一次发布只需一个 arm64
+      # 槽位，容量紧张时不会再出现「一条腿成功、另一条排队被取消」。
+      - name: 构建并发布 macOS arm64（tauri-action）
+        if: runner.os == 'macOS'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.REL_TAG }}
+          releaseName: "PigeonBox Desktop ${{ env.REL_TAG }}"
+          releaseBody: "桌面客户端安装包（Windows / macOS / Linux amd64+arm64）：连接你的 PigeonBox 服务器（托盘→服务器设置→连接服务器）。设备间直传请使用 PigeonBeam（信鸽直传）。Linux 适配范围见 README 支持矩阵。"
+          releaseDraft: false
+          prerelease: false
+          args: --target aarch64-apple-darwin
+      - name: 构建并发布 macOS x86_64（tauri-action）
+        if: runner.os == 'macOS'
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.REL_TAG }}
+          releaseName: "PigeonBox Desktop ${{ env.REL_TAG }}"
+          releaseBody: "桌面客户端安装包（Windows / macOS / Linux amd64+arm64）：连接你的 PigeonBox 服务器（托盘→服务器设置→连接服务器）。设备间直传请使用 PigeonBeam（信鸽直传）。Linux 适配范围见 README 支持矩阵。"
+          releaseDraft: false
+          prerelease: false
+          args: --target x86_64-apple-darwin
+      - name: 构建并发布 Linux / Windows（tauri-action）
+        if: runner.os != 'macOS'
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
