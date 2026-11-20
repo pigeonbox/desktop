@@ -114,19 +114,31 @@ jobs:
             echo "Release ${TAG} 已存在，跳过创建"
             exit 0
           fi
-          # PB_BOT_TOKEN 有 contents:write ⇒ 能建 Release；GITHUB_TOKEN 在 create
-          # 上可能被拒 ⇒ 失败只告警不阻断（下游 tauri-action 仍有一次机会，
-          # 且报错文案会指明下一步该做什么）。
+          # PB_BOT_TOKEN 有 contents:write ⇒ 能建 Release。
+          # ⚠️ 不得带 --target "$TAG"（#173）：GitHub API 的 target_commitish
+          # 只接受**分支名或 commit SHA**，tag 名会被判非法 ⇒ HTTP 422
+          # "Release.target_commitish is invalid" ⇒ 骨架没建成 ⇒ 下游 build
+          # 被连带跳过 ⇒ 整条发布链断在骨架这一步（6.10.0 实录 run
+          # 44680032391：ensure-release failed / build、finalize 全 skipped）。
+          # --verify-tag 自身会校验 tag 存在，且让 Release 指向该 tag。
           if gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
-               --verify-tag --target "$TAG" \
+               --verify-tag \
                --title "PigeonBox Desktop $TAG" \
                --latest=false \
                --notes "桌面客户端安装包（Windows / macOS / Linux amd64+arm64）：连接你的 PigeonBox 服务器（托盘→服务器设置→连接服务器）。设备间直传请使用 PigeonBeam（信鸽直传）。Linux 适配范围见 README 支持矩阵。"; then
             echo "✓ Release ${TAG} 已创建"
+          elif gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            # 并发/瞬时失败：复查发现 Release 已在 ⇒ 幂等视为成功。
+            echo "（复查：Release ${TAG} 已存在，跳过创建）"
           else
-            echo "::warning::自动创建 Release 失败（当前 token 可能无 create 权限）。若下方 tauri 步骤报 'Resource not accessible by integration'，请先手工建骨架：gh release create ${TAG} --repo ${GITHUB_REPOSITORY} --latest=false --verify-tag --target ${TAG}，再重跑本工作流。"
-            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-              && echo "（复查：Release 已由并发任务创建）"
+            # 骨架确实没建出来 ⇒ **立刻失败**并给出可操作命令（#173）。
+            # 下游 tauri-action 走 runtime-create 分支时 GITHUB_TOKEN 无权
+            # create-a-release（#162 实录），等 4 个平台构建跑完才失败纯属浪费；
+            # 旧的「只告警不阻断」写法在 set -e 下反而硬失败（else 分支最后一条
+            # 命令 gh release view 返回非 0）⇒ 注释与实现自相矛盾，一并改正。
+            echo "::error::自动创建 Release ${TAG} 失败，且复查确认 Release 仍不存在（当前 token 可能无 create 权限）。"
+            echo "::error::请先手工建骨架后重跑本工作流：gh release create ${TAG} --repo ${GITHUB_REPOSITORY} --latest=false --verify-tag"
+            exit 1
           fi
 
   build:

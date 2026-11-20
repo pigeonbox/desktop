@@ -12,10 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # Release 工作流 macOS runner 门禁（desktop#156）：macOS 两个目标必须
-      # 在同一个 arm64 job 内顺序构建，防止回退成两个 job 同时抢 runner。
-      - name: Release workflow macOS runner 校验
-        run: bash scripts/check-release-workflow.sh
+      # Release 工作流门禁（desktop#156 / #157 / #163）：macOS 两个目标必须
+      # 在同一个 arm64 job 内顺序构建，防止回退成两个 job 同时抢 runner；
+      # 骨架形态（禁 --target）与骨架失败语义（建不出来 ⇒ 阻断）由行为级
+      # 判据钉住，--selfcheck 含负对照（注入坏形态必须判红）。
+      - name: Release workflow 门禁（静态 + 行为级自检）
+        run: bash scripts/check-release-workflow.sh --selfcheck
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Linux 依赖(Tauri webkit2gtk-4.1)
